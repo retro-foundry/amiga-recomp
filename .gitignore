@@ -19,7 +19,13 @@ cmake-build-*/
 *.pdb
 *.ilk
 
-# Game data must never be committed
+# Game data, ROMs and vendor media must never be committed.
+*.iso
+*.ISO
+*.dms
+*.ipf
+*.lha
+*.lzx
 *.adf
 *.ipf
 *.hdf
