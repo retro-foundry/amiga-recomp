@@ -136,6 +136,7 @@ public:
     [[nodiscard]] bool disk_inserted() const { return !disk_.image.empty(); }
     [[nodiscard]] u32 disk_cylinder() const { return disk_.cylinder; }
     [[nodiscard]] u64 disk_reads() const { return disk_.reads; }
+    [[nodiscard]] u64 disk_index_pulses() const { return disk_.index_pulses; }
 
     // --- input -----------------------------------------------------------
     // Joystick/mouse port state, as JOY0DAT/JOY1DAT and the fire buttons in
@@ -202,6 +203,7 @@ private:
     void disk_start_dma();
     void disk_step();
     void disk_build_track();
+    void disk_index_pulse(u32 colour_clocks);
 
     GuestMemory& memory_;
     Runtime& runtime_;
@@ -375,6 +377,11 @@ private:
         u32 length_written = 0;    // DSKLEN is written twice to arm a transfer
         u16 last_length = 0;
         u64 reads = 0;
+        // A spinning drive pulses INDEX once per revolution, which reaches the
+        // guest as CIA-B's FLG interrupt. Loaders time their reads against it,
+        // so without it they sit in a timeout loop and give up.
+        u64 index_countdown = 0;
+        u64 index_pulses = 0;
     } disk_;
 
     // Input.

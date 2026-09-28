@@ -125,9 +125,12 @@ void Chipset::disk_build_track() {
     MfmWriter writer(disk_.track);
 
     for (u32 sector = 0; sector < kSectorsPerTrack; ++sector) {
-        // Two encoded zero bytes of gap, then the sync pattern.
-        const u8 gap[2] = {0, 0};
-        writer.block(gap, 1);
+        // Two zero bytes of preamble, which encode to four MFM bytes. With
+        // the 1084 bytes that follow this makes the canonical 1088-byte
+        // sector, and a decoder that walks sectors by their known length
+        // lands exactly on the next sync.
+        const u8 preamble[2] = {0, 0};
+        writer.block(preamble, sizeof preamble);
         writer.raw_word(kSyncWord);
         writer.raw_word(kSyncWord);
 
@@ -290,6 +293,30 @@ void Chipset::disk_step() {
     if (--disk_.words_remaining == 0) {
         disk_.dma_active = false;
         raise_interrupt(INTF_DSKBLK);
+    }
+}
+
+// A drive turns at 300 rpm, so the index hole passes the sensor five times a
+// second. The pulse sets CIA-B's FLG bit, and a loader that times its reads
+// against revolutions waits on exactly that.
+void Chipset::disk_index_pulse(u32 colour_clocks) {
+    if (!disk_.motor || !disk_.selected || disk_.image.empty()) return;
+
+    constexpr u64 kRevolutionColourClocks =
+        static_cast<u64>(kCpuClockPal / kCpuCyclesPerColourClock) / 5;
+
+    if (disk_.index_countdown > colour_clocks) {
+        disk_.index_countdown -= colour_clocks;
+        return;
+    }
+    disk_.index_countdown = kRevolutionColourClocks;
+    ++disk_.index_pulses;
+
+    // FLG is bit 4 of the CIA interrupt control register.
+    cia_b_.icr_data = static_cast<u8>(cia_b_.icr_data | 0x10);
+    if (cia_b_.icr_mask & 0x10) {
+        cia_b_.irq = true;
+        raise_interrupt(INTF_EXTER);
     }
 }
 

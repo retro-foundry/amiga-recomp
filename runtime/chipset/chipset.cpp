@@ -381,6 +381,8 @@ void Chipset::step_colour_clock() {
     // The blitter uses whatever DMA slots are left.
     if (master && (dmacon & DMAF_BLITTER) && blitter_.active) blitter_run();
 
+    disk_index_pulse(1);
+
     if (master && (dmacon & DMAF_DISK)) disk_step();
 
     if (master && (dmacon & DMAF_RASTER)) fetch_bitplane_words();
