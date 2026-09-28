@@ -1,6 +1,7 @@
 #include "amiga_recomp/runtime.hpp"
 
 #include <cstdarg>
+#include <cstdlib>
 #include <limits>
 
 namespace arecomp {
@@ -51,6 +52,7 @@ u16 enter_supervisor(M68kState& cpu) {
 // turns a baffling crash into an obvious diagnosis.
 u32 Runtime::check_vector(u32 vector_index, u32 pc) {
     const u32 handler = memory_.read32(vector_address(vector_index)) & address_mask();
+
     if (handler == 0 && !warned_null_vector_) {
         warned_null_vector_ = true;
         log("[runtime] vector %u (at $%08x) is zero; taken from pc=$%08x. "
@@ -135,6 +137,15 @@ u32 Runtime::enter_pending_interrupt(M68kState& cpu, u32 next_pc) {
     if (hardware_) pending_level_ = hardware_->pending_interrupt_level();
 
     const u32 handler = memory_.read32(vector_address(vector_index)) & address_mask();
+
+    // Which interrupts a game actually takes, and where they go, is the first
+    // thing to establish when it sits in a wait loop that never ends.
+    static const bool trace_interrupts = std::getenv("ARECOMP_IRQ_TRACE") != nullptr;
+    if (trace_interrupts && stats_.interrupts_taken <= 10) {
+        log("[irq] level %u -> vector %u -> $%08x (resuming at $%08x)", level,
+            vector_index, handler, next_pc);
+    }
+
     // An enabled interrupt with no handler installed is almost always a port
     // problem rather than a game one, and it is invisible if the guest is
     // simply allowed to run off to address zero.
