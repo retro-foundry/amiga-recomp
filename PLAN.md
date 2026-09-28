@@ -143,17 +143,18 @@ What works:
 4. That snapshot recompiles to **1361 blocks / 17 KB of game code**, which runs
    natively at about 5.6x Amiga speed with **zero interpreter fallbacks**.
 
-The title screen renders correctly (confirmed against the real game), the
-frame counter advances, and pressing fire moves the game on to its menu.
+The title screen renders correctly in all 16 colours, pixel for pixel against
+the real game, the frame counter advances, and input moves the game on to its
+menu.
 
 Current state: **converged**. Runs 400 million guest cycles with no faults,
-**31.7 million native blocks**, 1.75 million interpreter fallbacks, 2877
-interrupts, 52+ disk reads, and **renders real graphics** (640x200, four
-colours, structured image). `tools/converge.py` reports nothing further to
-add: the only unresolved targets left are 104 addresses in $43xxx, which the
-game loads from disk at run time and which are empty in the snapshot.
+**31.7 million native blocks**, 2877 interrupts, 52+ disk reads. Compiled and
+interpreted runs produce **identical state digests over 6,687,000 blocks**.
+`tools/converge.py` reports nothing further to add: the only unresolved
+targets left are 104 addresses in $43xxx, which the game loads from disk at
+run time and which are empty in the snapshot.
 
-Four real bugs were found by getting this far, all now fixed:
+Six real bugs were found by getting this far, all now fixed:
 
 1. **A 68000 decoder bug.** `cmpa.l a3,a6` ($bdcb) was decoded as
    `cmpm.l (a3)+,(a6)+`, because the CMPM pattern was matched without checking
@@ -169,6 +170,18 @@ Four real bugs were found by getting this far, all now fixed:
    wrote `INTENA <- $4eb9`, clearing the master interrupt enable for good.
 4. **The capture trigger did not force a block boundary**, so a trigger landing
    mid-block installed a hook that never fired.
+5. **Input was encoded as one bit per direction.** A joystick presents two
+   quadrature counters: right is bit 1, down is bit 1 xor bit 0, left is bit
+   9, up is bit 9 xor bit 8. A press for right read as right+down and a press
+   for down read as right. Port 0 was also being fed joystick directions when
+   a game reads it as a mouse, which is what left the menu unusable.
+6. **A write only retired the block at its first byte.** The picture is drawn
+   by an unrolled bitplane conversion loop that patches its own shifts two at
+   a time with one `move.l`. `write32`'s four-byte fast path reported only the
+   address it started at, so the block two bytes later kept running the `nop`
+   the capture held. Half the shifts never happened and the title screen came
+   out in four colours. The same hole was open for DMA, which writes through
+   `poke` and bypassed notification entirely.
 
 Remaining: 64 unknown targets, all in $43xxx, which is **empty in the snapshot**
 -- the game loads that code from disk at run time. Compiling it from the
@@ -178,10 +191,17 @@ natively.
 
 ## Next actions
 
-1. **Milestone 10, Vroom**: the game reaches its menu. To go further, capture
-   a second snapshot once the $43xxx region is populated, so that code can be
-   translated rather than interpreted, and drive real input through the SDL
-   backend.
+1. **Milestone 10, Vroom**: the game reaches its menu with real input and
+   correct colour. To go further, capture a second snapshot once the $43xxx
+   region is populated, so that code can be translated rather than
+   interpreted.
+
+   Bring-up equipment worth reaching for first, both documented in
+   docs/porting_game.md: `ARECOMP_DIGEST=N` prints a running digest of guest
+   registers at block boundaries, so diffing a compiled run against an
+   interpreted one names the block where they diverge; and
+   `GuestMemory::set_write_watch` reports every guest write into a range, DMA
+   included, which answers what filled a buffer and why it stopped.
 2. **Milestone 10 generally.** Everything else is in place.
    Capture with ami9000 after the game has decrunched and taken over the
    machine (docs/decrunching.md), write a manifest, and converge the indirect
