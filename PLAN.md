@@ -77,7 +77,7 @@ Tracking AMIGA_RECOMP.md §66. Update this table as work lands.
 | 7 | Blitter (area, minterms, fill, line, async busy/IRQ) | **done** for area/fill/descending; line mode is approximate |
 | 8 | Input / Paula audio / CIA timers | **done** (audio DMA + interrupts; no host mixer yet) |
 | 9 | Trace-assisted convergence, fallback removal | not started |
-| 10 | Real game snapshot to gameplay, zero fallback | **partly** - Vroom boots from ADF, decrunches, and the decrunched game recompiles and runs with zero fallback; it stops in its own level loader |
+| 10 | Real game snapshot to gameplay, zero fallback | **largely** - Vroom boots from its ADF, decrunches, recompiles, renders its title screen, and responds to input by advancing to the menu. Not zero fallback: one region is loaded at run time |
 | 11 | Hooks / mod API + widescreen enhancement | **done** (hooks + level 1 widescreen; level 2 is per-game) |
 
 ## Layout
@@ -143,6 +143,9 @@ What works:
 4. That snapshot recompiles to **1361 blocks / 17 KB of game code**, which runs
    natively at about 5.6x Amiga speed with **zero interpreter fallbacks**.
 
+The title screen renders correctly (confirmed against the real game), the
+frame counter advances, and pressing fire moves the game on to its menu.
+
 Current state: **converged**. Runs 400 million guest cycles with no faults,
 **31.7 million native blocks**, 1.75 million interpreter fallbacks, 2877
 interrupts, 52+ disk reads, and **renders real graphics** (640x200, four
@@ -175,10 +178,10 @@ natively.
 
 ## Next actions
 
-1. **Milestone 10, Vroom**: the game still sits in the wait loop at `$12f98`
-   although the counter's incrementer at `$a4f8` is now compiled and its
-   interrupts fire. Next: trace whether that path is actually taken, and
-   handle the $43xxx overlay with a later capture.
+1. **Milestone 10, Vroom**: the game reaches its menu. To go further, capture
+   a second snapshot once the $43xxx region is populated, so that code can be
+   translated rather than interpreted, and drive real input through the SDL
+   backend.
 2. **Milestone 10 generally.** Everything else is in place.
    Capture with ami9000 after the game has decrunched and taken over the
    machine (docs/decrunching.md), write a manifest, and converge the indirect

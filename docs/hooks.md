@@ -36,6 +36,36 @@ as the original code would: if the original ended in `RTS`, return
 - `Hook::hits` counts invocations, which is the quickest way to find out that
   the routine you hooked is not the one the game actually calls.
 
+## Driving a game during bring-up
+
+A hook is the simplest way to answer "is it stuck, or is it waiting for me?".
+A game idling on its title screen and a game wedged in a loop look identical
+from outside; a hook on the loop tells them apart, and can then supply the
+input that moves it on.
+
+```cpp
+// The title screen's per-frame wait: it spins until the interrupt handler
+// changes the frame counter. Watching that counter says whether the game is
+// stuck or idling, and after a while we press fire to find out if it moves on.
+runtime.hooks().add(0x00012f98, HookMode::Before, "title-probe",
+    [](M68kState& cpu, Runtime& rt) -> uint32_t {
+        static u32 visits = 0;
+        const u32 counter = rt.memory().peek32(0x0000a884);
+        if (++visits == 400) {
+            if (Chipset* chipset = port::active_chipset())
+                chipset->set_joystick(1, false, false, false, false, true);
+        }
+        return cpu.pc;
+    });
+```
+
+That exact hook is how Vroom was shown to be running rather than hung: the
+counter was advancing all along, and pressing fire moved it from the title
+screen to the menu.
+
+Hooks live in the generated port's `patch/` directory, which arecomp writes
+once and never overwrites, so they survive regenerating the translation.
+
 ## What hooks are for
 
 Modern controller mapping, debug overlays, save states, high-resolution
