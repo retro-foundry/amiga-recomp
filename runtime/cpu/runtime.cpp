@@ -46,13 +46,27 @@ u16 enter_supervisor(M68kState& cpu) {
 
 } // namespace
 
+// Reads an exception vector, complaining once if it is zero. A guest that
+// runs off to address 0 is almost never doing so deliberately, and saying so
+// turns a baffling crash into an obvious diagnosis.
+u32 Runtime::check_vector(u32 vector_index, u32 pc) {
+    const u32 handler = memory_.read32(vector_address(vector_index)) & address_mask();
+    if (handler == 0 && !warned_null_vector_) {
+        warned_null_vector_ = true;
+        log("[runtime] vector %u (at $%08x) is zero; taken from pc=$%08x. "
+            "Execution will continue from address 0.",
+            vector_index, vector_address(vector_index), pc);
+    }
+    return handler;
+}
+
 u32 Runtime::enter_exception_index(M68kState& cpu, u32 vector_index, u32 pc) {
     const u16 old_sr = enter_supervisor(cpu);
     push32(cpu, pc);
     push16(cpu, old_sr);
     cpu.stopped = false;
     ++stats_.exceptions_taken;
-    return memory_.read32(vector_address(vector_index)) & address_mask();
+    return check_vector(vector_index, pc);
 }
 
 u32 Runtime::enter_exception(M68kState& cpu, Vector vector, u32 pc) {
@@ -69,6 +83,14 @@ u32 Runtime::enter_group0_fault(M68kState& cpu, const GuestFault& fault, u32 pc)
         return pc;
     }
     in_group0 = true;
+
+    if (!warned_bus_error_) {
+        warned_bus_error_ = true;
+        log("[runtime] %s error: %s access to $%08x from pc=$%08x. That address "
+            "is not mapped; the machine profile may be missing a memory region.",
+            fault.vector == Vector::BusError ? "bus" : "address",
+            fault.read ? "read" : "write", fault.address, pc);
+    }
 
     const u16 old_sr = enter_supervisor(cpu);
 
@@ -93,7 +115,7 @@ u32 Runtime::enter_group0_fault(M68kState& cpu, const GuestFault& fault, u32 pc)
     cpu.stopped = false;
     ++stats_.exceptions_taken;
     in_group0 = false;
-    return memory_.read32(vector_address(fault.vector)) & address_mask();
+    return check_vector(static_cast<u32>(fault.vector), pc);
 }
 
 u32 Runtime::enter_pending_interrupt(M68kState& cpu, u32 next_pc) {
@@ -111,7 +133,20 @@ u32 Runtime::enter_pending_interrupt(M68kState& cpu, u32 next_pc) {
 
     // Taking the interrupt may have changed the mask; re-evaluate.
     if (hardware_) pending_level_ = hardware_->pending_interrupt_level();
-    return memory_.read32(vector_address(vector_index)) & address_mask();
+
+    const u32 handler = memory_.read32(vector_address(vector_index)) & address_mask();
+    // An enabled interrupt with no handler installed is almost always a port
+    // problem rather than a game one, and it is invisible if the guest is
+    // simply allowed to run off to address zero.
+    if (handler == 0 && !warned_null_vector_) {
+        warned_null_vector_ = true;
+        log("[runtime] level %u interrupt taken through vector %u at $%08x, "
+            "which is zero. The guest will run from address 0. Either the game "
+            "had not installed its handler yet, or the captured state is from "
+            "before it did.",
+            level, vector_index, vector_address(vector_index));
+    }
+    return handler;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +158,8 @@ void Runtime::note_unknown_target(GuestAddr address) {
         if (seen == address) return;
     stats_.unknown_targets.push_back(address);
     if (config_.log_unknown_targets)
-        log("[recomp] no compiled block at %08x", address);
+        log("[recomp] no compiled block at %08x (reached from %08x)", address,
+            last_block_);
 }
 
 u32 Runtime::run_block_at(M68kState& cpu, GuestAddr pc) {
@@ -147,6 +183,7 @@ u32 Runtime::run_block_at(M68kState& cpu, GuestAddr pc) {
 
 void Runtime::step_block(M68kState& cpu) {
     const GuestAddr pc = cpu.pc;
+    if (blocks_.find(pc)) last_block_ = pc;
 
     if (config_.trace_blocks)
         log("[block] %08x d0=%08x a7=%08x sr=%04x", pc, cpu.d[0], cpu.a[7], cpu.sr());
@@ -202,7 +239,18 @@ u64 Runtime::run(M68kState& cpu, u64 cycle_budget) {
         try {
             step_block(cpu);
         } catch (const GuestFault& fault) {
-            cpu.pc = enter_group0_fault(cpu, fault, cpu.pc);
+            try {
+                cpu.pc = enter_group0_fault(cpu, fault, cpu.pc);
+            } catch (const GuestFault& nested) {
+                // A fault while stacking a fault frame is a double fault. A
+                // real 68000 halts; so do we, rather than letting the
+                // exception escape and abort the process.
+                log("[fatal] double fault at pc=%08x: %s access to %08x while "
+                    "handling a fault at %08x",
+                    cpu.pc, nested.read ? "read" : "write", nested.address,
+                    fault.address);
+                cpu.halted = true;
+            }
         }
     }
     return stats_.blocks_executed - start_blocks;

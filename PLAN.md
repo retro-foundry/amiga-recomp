@@ -77,7 +77,7 @@ Tracking AMIGA_RECOMP.md §66. Update this table as work lands.
 | 7 | Blitter (area, minterms, fill, line, async busy/IRQ) | **done** for area/fill/descending; line mode is approximate |
 | 8 | Input / Paula audio / CIA timers | **done** (audio DMA + interrupts; no host mixer yet) |
 | 9 | Trace-assisted convergence, fallback removal | not started |
-| 10 | Real game snapshot to gameplay, zero fallback | not started (needs game data) |
+| 10 | Real game snapshot to gameplay, zero fallback | **partly** - Vroom boots from ADF, decrunches, and the decrunched game recompiles and runs with zero fallback; it stops in its own level loader |
 | 11 | Hooks / mod API + widescreen enhancement | **done** (hooks + level 1 widescreen; level 2 is per-game) |
 
 ## Layout
@@ -125,15 +125,43 @@ See [docs/widescreen.md](docs/widescreen.md). Short version:
 - The honest position: **no automatic widescreen.** The framework's job is to
   make the per-game work small, inspectable and testable.
 
+## Vroom (the real game)
+
+`ports/vroom.toml` boots the real disk image; `ports/vroom-game.toml`
+recompiles the decrunched result. Neither the ADF nor the snapshot is in this
+repository.
+
+What works:
+
+1. `arecomp bootblock` reads the loader's two `trackdisk.device` reads off the
+   boot block and emits the manifest fragment.
+2. The recompiled boot stub kills the OS, installs a level 1 vector, triggers a
+   software interrupt, measures the CPU speed against a CIA timer, seeks the
+   drive and reads raw MFM through the chipset's disk DMA.
+3. It decrunches the game to `$3658`; the capture hook writes memory and
+   machine state there.
+4. That snapshot recompiles to **1361 blocks / 17 KB of game code**, which runs
+   natively at about 5.6x Amiga speed with **zero interpreter fallbacks**.
+
+Where it stops: the game's own level loader at `$1d470` reads one track
+(cylinder 10) and the table copy that follows at `$1d5cc` never finds its
+`$ffffffff` terminator, so it walks off the end of memory. The runtime
+diagnoses this clearly (`bus error: read access to $00100000 from pc=$0001d5cc`).
+The disk subsystem is verified against an independent MFM decoder and is good
+enough for the boot loader, so the remaining difference is something specific
+about this loader's expectations. Next step is to trace what `$1d470` does with
+the words it receives.
+
 ## Next actions
 
 1. **Milestone 10 needs a real game snapshot.** Everything else is in place.
    Capture with ami9000 after the game has decrunched and taken over the
    machine (docs/decrunching.md), write a manifest, and converge the indirect
    targets until the fallback count is zero. Blocked on data, not on code.
-2. **SDL platform backend.** The chipset renders to a `Framebuffer` and a
-   frame callback; nothing presents it yet except the PPM writer. This is the
-   next piece of real work.
+2. ~~SDL platform backend.~~ Done: `runtime/platform/sdl_platform.cpp`, built
+   with `-DARECOMP_WITH_SDL=ON`. Generated ports open a window, present each
+   frame and map the arrow keys and space to joystick port 1. Without SDL the
+   same source builds headless.
 3. **OS shim generator** (`arecomp osshim`) reading the NDK `.fd` files.
    Format is understood, hook machinery exists. See docs/os_interaction.md.
    Only needed for OS-friendly games, which is a minority.

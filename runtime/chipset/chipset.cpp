@@ -235,6 +235,11 @@ void Chipset::write_register(u32 offset, u16 value, bool from_copper) {
         blitter_start();
         return;
 
+    case reg::DSKLEN:
+        regs_[offset >> 1] = value;
+        disk_start_dma();
+        return;
+
     case reg::DIWSTRT:
     case reg::DIWSTOP:
     case reg::DDFSTRT:
@@ -375,6 +380,8 @@ void Chipset::step_colour_clock() {
 
     // The blitter uses whatever DMA slots are left.
     if (master && (dmacon & DMAF_BLITTER) && blitter_.active) blitter_run();
+
+    if (master && (dmacon & DMAF_DISK)) disk_step();
 
     if (master && (dmacon & DMAF_RASTER)) fetch_bitplane_words();
     shift_out_pixels();

@@ -152,6 +152,7 @@ public:
     // single store, and only on instructions that touch memory.
     void set_insn_pc(u32 pc) noexcept { insn_pc_ = pc; }
     [[nodiscard]] u32 insn_pc() const noexcept { return insn_pc_; }
+    [[nodiscard]] GuestAddr last_block() const noexcept { return last_block_; }
 
     // Wired up only when the interpreter fallback is compiled in.
     using InterpretFn = u32 (*)(M68kState&, Runtime&);
@@ -162,6 +163,7 @@ public:
 
 private:
     void sync_hardware(M68kState& cpu);
+    u32 check_vector(u32 vector_index, u32 pc);
     u32 run_block_at(M68kState& cpu, GuestAddr pc);
 
     GuestMemory& memory_;
@@ -175,6 +177,11 @@ private:
     u8 pending_level_ = 0;
     MasterTick hardware_deadline_ = 0;
     u32 insn_pc_ = 0;
+    // The last block the dispatcher entered, so an unknown target can say
+    // where it was reached from. That one fact is most of port bring-up.
+    GuestAddr last_block_ = 0;
+    bool warned_null_vector_ = false;
+    bool warned_bus_error_ = false;
 
     friend class Chipset;
 };

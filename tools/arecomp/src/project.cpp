@@ -122,7 +122,12 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             << "// Creates and maps the custom chips, and attaches them to the\n"
             << "// runtime. Returns nullptr when this port has no chipset.\n"
             << "Chipset* configure_chipset(GuestMemory& memory, Runtime& runtime);\n\n"
+            << "// Inserts the disk image, so the game's own trackloader can read\n"
+            << "// it. Returns false when this port does not boot from a disk.\n"
+            << "bool insert_disk(Chipset& chipset, const std::string& path);\n\n"
             << "constexpr const char* kName = \"" << manifest.name << "\";\n"
+            << "constexpr const char* kDiskImage = \""
+            << escape_backslashes(manifest.resolve(manifest.disk_path)) << "\";\n"
             << "constexpr const char* kDefaultImage = \""
             << escape_backslashes(manifest.input_path) << "\";\n"
             << "\n} // namespace port\n";
@@ -138,6 +143,7 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             << "#include <vector>\n\n"
             << "#include \"amiga_recomp/chipset.hpp\"\n"
             << "#include \"amiga_recomp/halt_device.hpp\"\n"
+            << "#include \"amiga_recomp/memdump.hpp\"\n"
             << "#include \"patch/hooks.hpp\"\n\n"
             << "namespace port {\n\n"
             << "void configure_memory(GuestMemory& memory) {\n";
@@ -157,10 +163,22 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             << "    std::size_t n;\n"
             << "    while ((n = std::fread(buffer, 1, sizeof buffer, file)) > 0)\n"
             << "        data.insert(data.end(), buffer, buffer + n);\n"
-            << "    std::fclose(file);\n"
-            << "    return memory.load(" << hex(manifest.load_address)
-            << ", data.data(), data.size());\n"
-            << "}\n\n"
+            << "    std::fclose(file);\n";
+        if (manifest.input_mode == InputMode::Adf) {
+            out << "    // The chunks the boot block reads off the disk before it\n"
+                << "    // jumps into them, as recorded in the manifest.\n";
+            for (const AdfLoadSpec& load : manifest.adf_loads) {
+                out << "    if (data.size() < " << hex(load.offset + load.length)
+                    << ") return false;\n"
+                    << "    if (!memory.load(" << hex(load.address) << ", data.data() + "
+                    << hex(load.offset) << ", " << hex(load.length) << ")) return false;\n";
+            }
+            out << "    return true;\n";
+        } else {
+            out << "    return memory.load(" << hex(manifest.load_address)
+                << ", data.data(), data.size());\n";
+        }
+        out << "}\n\n"
             << "void configure_cpu(M68kState& cpu) {\n"
             << "    cpu.pc = " << hex(manifest.cpu.entry) << ";\n"
             << "    cpu.set_sr(0x" << std::hex << manifest.cpu.initial_sr << std::dec << "u);\n";
@@ -171,8 +189,31 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
                 out << "    cpu.a[" << i << "] = " << hex(manifest.cpu.a[i]) << ";\n";
         }
         out << "}\n\n"
-            << "void install_hooks(Runtime& runtime) {\n"
-            << "    patch::install(runtime);\n"
+            << "void install_hooks(Runtime& runtime) {\n";
+        if (manifest.capture.enabled) {
+            out << "    // Capture guest memory the first time execution reaches\n"
+                << "    // the trigger. This is how a game that decrunches itself\n"
+                << "    // becomes a snapshot the recompiler can translate.\n"
+                << "    runtime.hooks().add(" << hex(manifest.capture.trigger)
+                << ", HookMode::Before, \"capture\",\n"
+                << "        [](M68kState& cpu, Runtime& rt) -> uint32_t {\n"
+                << "            static bool done = false;\n"
+                << "            if (done) return cpu.pc;\n"
+                << "            done = true;\n"
+                << "            const bool ok = dump_memory(rt.memory(), "
+                << hex(manifest.capture.start) << ", " << hex(manifest.capture.size)
+                << ",\n                                        \""
+                << escape_backslashes(manifest.capture.path) << "\");\n"
+                << "            dump_cpu_state(cpu, \""
+                << escape_backslashes(manifest.capture.path) << ".toml\");\n"
+                << "            std::fprintf(stderr, \"[capture] %s at $%08x -> "
+                << escape_backslashes(manifest.capture.path) << "\\n\",\n"
+                << "                         ok ? \"wrote\" : \"FAILED\", cpu.pc);\n"
+                << (manifest.capture.halt ? "            cpu.halted = true;\n" : "")
+                << "            return cpu.pc;\n"
+                << "        });\n";
+        }
+        out << "    patch::install(runtime);\n"
             << "}\n\n"
             << "void configure_harness(GuestMemory& memory, M68kState& cpu) {\n";
         if (manifest.harness_halt_address != 0) {
@@ -201,6 +242,22 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
                 << "    return &chipset;\n";
         } else {
             out << "    (void)memory;\n    (void)runtime;\n    return nullptr;\n";
+        }
+        out << "}\n\n"
+            << "bool insert_disk(Chipset& chipset, const std::string& path) {\n";
+        if (!manifest.disk_path.empty()) {
+            out << "    std::FILE* file = std::fopen(path.c_str(), \"rb\");\n"
+                << "    if (!file) return false;\n"
+                << "    std::vector<uint8_t> data;\n"
+                << "    uint8_t buffer[65536];\n"
+                << "    std::size_t n;\n"
+                << "    while ((n = std::fread(buffer, 1, sizeof buffer, file)) > 0)\n"
+                << "        data.insert(data.end(), buffer, buffer + n);\n"
+                << "    std::fclose(file);\n"
+                << "    chipset.insert_disk(std::move(data));\n"
+                << "    return true;\n";
+        } else {
+            out << "    (void)chipset;\n    (void)path;\n    return false;\n";
         }
         out << "}\n\n"
             << "} // namespace port\n";
@@ -252,6 +309,7 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             "// Entry point for this port. Written once by arecomp; edit freely.\n\n"
             "#include <cstdio>\n"
             "#include <string>\n\n"
+            "#include \"amiga_recomp/platform.hpp\"\n"
             "#include \"amiga_recomp/ppm.hpp\"\n"
             "#include \"amiga_recomp/runtime.hpp\"\n"
             "#include \"blocks.hpp\"\n"
@@ -284,11 +342,41 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             "    runtime.set_interpreter(&interpret_block);\n"
             "#endif\n\n"
             "    // The custom chips, if this port has them.\n"
-            "    Chipset* chipset = port::configure_chipset(memory, runtime);\n\n"
+            "    Chipset* chipset = port::configure_chipset(memory, runtime);\n"
+            "    // A disk-booting port also puts the image in the drive, so the\n"
+            "    // game's own loader can read it exactly as it would a real one.\n"
+            "    if (chipset && port::insert_disk(*chipset, image))\n"
+            "        std::printf(\"%s: disk inserted\\n\", port::kName);\n\n"
             "    generated::install_blocks(runtime.blocks());\n"
             "    port::install_hooks(runtime);\n\n"
             "    port::configure_cpu(cpu);\n\n"
-            "    runtime.run(cpu);\n\n"
+            "    // An optional cycle budget, so a port that hangs during\n"
+            "    // bring-up stops instead of spinning forever.\n"
+            "    const unsigned long long budget =\n"
+            "        argc > 3 ? std::strtoull(argv[3], nullptr, 0) : 0ull;\n"
+            "    // Presentation. With SDL compiled in this opens a window; without\n"
+            "    // it the backend is headless and the loop below still terminates\n"
+            "    // on the cycle budget, so the same source works either way.\n"
+            "    PlatformConfig platform_config;\n"
+            "    platform_config.title = port::kName;\n"
+            "    auto platform = create_platform(platform_config);\n"
+            "    if (chipset) {\n"
+            "        Platform* view = platform.get();\n"
+            "        chipset->set_frame_callback(\n"
+            "            [view](const Framebuffer& frame) { view->present(frame); });\n"
+            "    }\n\n"
+            "    if (chipset && platform->is_visible()) {\n"
+            "        // Interactive: advance one frame of guest time, then pump\n"
+            "        // host events, so input latency is one frame rather than\n"
+            "        // however long the whole run takes.\n"
+            "        const uint64_t frame_cycles = kCpuClockPal / 50;\n"
+            "        while (!cpu.halted && !platform->should_quit()) {\n"
+            "            runtime.run(cpu, frame_cycles);\n"
+            "            if (!platform->poll(*chipset)) break;\n"
+            "        }\n"
+            "    } else {\n"
+            "        runtime.run(cpu, budget);\n"
+            "    }\n\n"
             "    std::printf(\"%s: halted at $%08x after %llu cycles\\n\", port::kName,\n"
             "                cpu.pc, (unsigned long long)cpu.cycles);\n"
             "    std::printf(\"  blocks executed      : %llu\\n\",\n"

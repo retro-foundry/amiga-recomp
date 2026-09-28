@@ -110,9 +110,7 @@ bool Image::load(const Manifest& manifest, Image& out, std::string& error) {
     case InputMode::Hunk:
         return load_hunk(manifest, out, error);
     case InputMode::Adf:
-        error = "ADF input is not implemented yet (spec section 4.3); capture a "
-                "snapshot after the loader instead";
-        return false;
+        return load_adf(manifest, out, error);
     }
     error = "unknown input mode";
     return false;
@@ -130,6 +128,51 @@ bool Image::load_flat(const Manifest& manifest, Image& out, std::string& error) 
     segment.name = manifest.input_mode == InputMode::Snapshot ? "snapshot" : "image";
     segment.data = std::move(data);
     out.add_segment(std::move(segment));
+    out.set_entry(manifest.cpu.entry);
+    return true;
+}
+
+bool Image::load_adf(const Manifest& manifest, Image& out, std::string& error) {
+    std::vector<u8> disk;
+    if (!read_file(manifest.resolve(manifest.input_path), disk, error)) return false;
+
+    // A standard double-density Amiga disk is 80 cylinders, two heads, eleven
+    // 512-byte sectors. Anything else is worth mentioning rather than assuming.
+    constexpr std::size_t kStandardAdf = 80u * 2u * 11u * 512u;
+    if (disk.size() != kStandardAdf) {
+        std::fprintf(stderr,
+                     "arecomp: note: %s is %zu bytes, not the usual %zu of a "
+                     "double-density disk\n",
+                     manifest.input_path.c_str(), disk.size(), kStandardAdf);
+    }
+
+    if (manifest.adf_loads.empty()) {
+        error =
+            "ADF input needs [[adf.load]] entries saying what the loader reads "
+            "into memory. Run `arecomp bootblock <adf>` to read them off the "
+            "boot block, or capture a snapshot instead (docs/decrunching.md)";
+        return false;
+    }
+
+    for (const AdfLoadSpec& load : manifest.adf_loads) {
+        if (static_cast<std::size_t>(load.offset) + load.length > disk.size()) {
+            char buf[160];
+            std::snprintf(buf, sizeof buf,
+                          "[[adf.load]] at $%08x length $%08x runs past the end "
+                          "of the disk image",
+                          load.offset, load.length);
+            error = buf;
+            return false;
+        }
+        Segment segment;
+        segment.address = load.address;
+        segment.executable = load.executable;
+        segment.name = "adf";
+        segment.data.assign(disk.begin() + static_cast<std::ptrdiff_t>(load.offset),
+                            disk.begin() + static_cast<std::ptrdiff_t>(load.offset + load.length));
+        out.add_segment(std::move(segment));
+    }
+
     out.set_entry(manifest.cpu.entry);
     return true;
 }

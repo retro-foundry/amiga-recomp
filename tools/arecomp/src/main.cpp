@@ -8,6 +8,7 @@
 
 #include "amiga_recomp/decoder.hpp"
 #include "analyzer.hpp"
+#include "bootblock.hpp"
 #include "codegen.hpp"
 #include "image.hpp"
 #include "manifest.hpp"
@@ -123,6 +124,61 @@ int command_disasm(const std::string& manifest_path, u32 from, u32 count) {
     return 0;
 }
 
+int command_bootblock(const std::string& path, bool show_disassembly) {
+    std::vector<u8> disk;
+    std::string error;
+    if (!read_file(path, disk, error)) {
+        std::fprintf(stderr, "arecomp: %s\n", error.c_str());
+        return 1;
+    }
+
+    BootblockReport report;
+    if (!analyse_bootblock(disk, report, error)) {
+        std::fprintf(stderr, "arecomp: %s\n", error.c_str());
+        return 1;
+    }
+
+    std::printf("boot block of %s\n", path.c_str());
+    std::printf("  signature : %s%s\n", report.signature.c_str(),
+                report.has_dos_signature ? "" : "   (not a DOS boot block)");
+    std::printf("  checksum  : %s\n", report.checksum_valid ? "valid" : "INVALID");
+
+    if (show_disassembly) {
+        std::printf("\ndisassembly:\n");
+        for (const std::string& line : report.disassembly)
+            std::printf("  %s\n", line.c_str());
+    }
+
+    if (!report.note.empty()) std::printf("\nnote: %s\n", report.note.c_str());
+
+    if (report.loads.empty()) {
+        std::printf(
+            "\nNothing to put in a manifest. Either disassemble the boot block\n"
+            "yourself (--disasm), or capture a snapshot after the loader has\n"
+            "run (docs/decrunching.md).\n");
+        return 0;
+    }
+
+    std::printf("\n%zu disk read(s) recognised:\n", report.loads.size());
+    for (const BootLoad& load : report.loads) {
+        std::printf("  $%08x bytes from disk $%08x -> memory $%08x  (issued at $%03x)\n",
+                    load.length, load.offset, load.address, load.site);
+    }
+    if (report.found_entry_jump)
+        std::printf("  then jumps to $%08x\n", report.entry);
+
+    std::printf("\nManifest fragment:\n\n");
+    std::printf("[input]\ntype = \"adf\"\npath = \"%s\"\n\n", path.c_str());
+    if (report.found_entry_jump)
+        std::printf("[cpu]\nentry = 0x%08x\nsr = 0x2700\n\n", report.entry);
+    for (const BootLoad& load : report.loads) {
+        std::printf("[[adf.load]]\noffset = 0x%08x\nlength = 0x%08x\naddress = 0x%08x\n\n",
+                    load.offset, load.length, load.address);
+    }
+    std::printf("Check these against the disassembly before trusting them.\n");
+    return 0;
+}
+
 int command_recompile(const std::string& manifest_path, std::string output_dir) {
     Manifest manifest;
     Image image;
@@ -219,18 +275,21 @@ int main(int argc, char** argv) {
     std::string output_dir;
     u32 from = 0;
     u32 count = 0;
+    bool show_disassembly = false;
     for (int i = 3; i < argc; ++i) {
         const std::string arg = argv[i];
         const bool has_value = i + 1 < argc;
         if ((arg == "-o" || arg == "--output") && has_value) output_dir = argv[++i];
         else if (arg == "--from" && has_value) from = parse_address(argv[++i]);
         else if (arg == "--count" && has_value) count = parse_address(argv[++i]);
+        else if (arg == "--disasm") show_disassembly = true;
         else {
             std::fprintf(stderr, "arecomp: unknown option %s\n", arg.c_str());
             return 1;
         }
     }
 
+    if (command == "bootblock") return command_bootblock(manifest_path, show_disassembly);
     if (command == "recompile") return command_recompile(manifest_path, output_dir);
     if (command == "analyze") return command_analyze(manifest_path);
     if (command == "disasm") return command_disasm(manifest_path, from, count);

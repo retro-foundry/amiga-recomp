@@ -1,0 +1,49 @@
+# Vroom, recompiled from a snapshot taken after its own loader decrunched it.
+#
+# Produced by running ports/vroom.toml, which boots the real disk image,
+# reads MFM through the chipset's disk DMA, lets the game decrunch itself, and
+# captures memory and machine state the moment it jumps to $3658.
+#
+# This is the convergence step from docs/decrunching.md. Neither the snapshot
+# nor the disk image is part of this repository.
+
+[game]
+name = "Vroom (decrunched)"
+id = "vroom-game"
+machine = "a500-pal"
+
+[input]
+type = "snapshot"
+memory = "../projects/vroom/vroom-decrunched.bin"
+load_address = 0x00000000
+# The game keeps loading from the disk after it has decrunched itself, so the
+# image has to stay in the drive.
+disk = "../projects/vroom/Vroom (1991)(Lankhor).adf"
+
+# Captured machine state, as written by the capture hook.
+[cpu]
+entry = 0x00003658
+sr = 0x2010
+d = [0x0000124b, 0x00000002, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000]
+a = [0x0006abde, 0x0001d04c, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00073cac]
+
+[video]
+standard = "pal"
+
+[machine]
+chipset = true
+
+[recompiler]
+blocks_per_file = 512
+
+# One megabyte of chip ram. With 512K the game's table copy at $1d5cc runs
+# straight off the end of memory, so it expects at least an expanded A500.
+[[memory.region]]
+start = 0x00000000
+size = 0x00100000
+kind = "chip"
+permissions = "rwx"
+
+[[code.range]]
+start = 0x00003000
+end   = 0x00020000

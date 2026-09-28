@@ -1,0 +1,94 @@
+# Vroom (1991, Lankhor) - a real game, as opposed to the synthetic test
+# programs. The disk image is NOT part of this repository; supply your own.
+#
+# The boot block is a custom loader that uses trackdisk.device to read two
+# chunks off the disk and jump into the second. Those reads were read off the
+# boot block with:
+#
+#     arecomp bootblock "<disk>.adf" --disasm
+#
+# This is the intended Mode C workflow: the framework cannot infer a
+# trackloader, but it can be told exactly what one does.
+
+[game]
+name = "Vroom"
+id = "vroom"
+machine = "a500-pal"
+
+[input]
+type = "adf"
+path = "../projects/vroom/Vroom (1991)(Lankhor).adf"
+
+[cpu]
+entry = 0x00068f00
+sr = 0x2000        # a boot block is entered in supervisor with interrupts enabled
+a = [0, 0, 0, 0, 0, 0, 0, 0x0007f000]
+
+[video]
+standard = "pal"
+
+[machine]
+chipset = true
+
+[recompiler]
+blocks_per_file = 512
+
+[[adf.load]]
+offset = 0x0008ea00
+length = 0x00005000
+address = 0x00050000
+
+[[adf.load]]
+offset = 0x0008cc00
+length = 0x00001e00
+address = 0x00068f00
+
+# The loader copies $69330..$6AA0C to $6EE88 before jumping through a software
+# interrupt. That copy is statically resolvable back to a disk offset, so it is
+# declared here and discovery can see the code it produces. This is the overlay
+# case from AMIGA_RECOMP.md 31, recorded as metadata rather than guessed at.
+[[adf.load]]
+offset = 0x0008d030
+length = 0x000016dc
+address = 0x0006ee88
+
+# $68fb6 is the "jmp (a2)" at the end of a self-relocation path. The stub
+# compares a constant address against $68fb0 and always branches past it, so
+# this path is never taken from our entry state. Declared with no targets to
+# record that it was examined rather than missed.
+[[indirect_target]]
+site = 0x00068fb6
+targets = []
+
+# The loader decrunches the game to $3658 and jumps there. Capture memory at
+# that moment: from there on the game exists as ordinary code and can be
+# recompiled statically. This is the convergence step from
+# docs/decrunching.md.
+[capture]
+trigger = 0x00003658
+start   = 0x00000000
+size    = 0x00080000
+halt    = true
+path    = "projects/vroom/vroom-decrunched.bin"
+
+[[memory.region]]
+start = 0x00000000
+size = 0x00080000
+kind = "chip"
+permissions = "rwx"
+
+# Execution leaves the entry stub through a level 1 interrupt whose vector the
+# stub installs at $64. Static analysis cannot follow that, so the handler is
+# declared as an entry point.
+[code]
+entry_points = [0x00068f74]
+
+# The second chunk is what the boot block jumps into...
+[[code.range]]
+start = 0x00068f00
+end   = 0x0006ad00
+
+# ...and the block it copies into place before jumping.
+[[code.range]]
+start = 0x0006ee88
+end   = 0x00070564

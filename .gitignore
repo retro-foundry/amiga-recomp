@@ -2,10 +2,12 @@
 # They contain game-derived code and data.
 /projects/
 
-# Build output
-/build/
+# Build output. The glob matters: a second build tree such as build-sdl/ is
+# just as unwelcome as build/.
+/build*/
 /out/
 cmake-build-*/
+_deps/
 .ninja_*
 *.ninja
 
@@ -39,6 +41,11 @@ capture/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Screenshots and captures produced by running a port. Derived from game data.
+*.ppm
+*.png
+*.bin.toml
 
 # Editor / OS
 .vscode/

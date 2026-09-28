@@ -127,6 +127,16 @@ public:
         on_frame_ = std::move(fn);
     }
 
+    // --- disk ------------------------------------------------------------
+    // Insert a raw ADF. The chipset builds MFM track images from it on demand,
+    // so a game's own trackloader reads it exactly as it would a real disk
+    // (AMIGA_RECOMP.md 4.3).
+    void insert_disk(std::vector<u8> adf);
+    void eject_disk();
+    [[nodiscard]] bool disk_inserted() const { return !disk_.image.empty(); }
+    [[nodiscard]] u32 disk_cylinder() const { return disk_.cylinder; }
+    [[nodiscard]] u64 disk_reads() const { return disk_.reads; }
+
     // --- input -----------------------------------------------------------
     // Joystick/mouse port state, as JOY0DAT/JOY1DAT and the fire buttons in
     // CIA-A PRA (AMIGA.md, input).
@@ -185,6 +195,13 @@ private:
     // --- audio / cia -----------------------------------------------------
     void audio_step();
     void cia_step();
+
+    // --- disk ------------------------------------------------------------
+    void disk_write_ciab_prb(u8 value);
+    [[nodiscard]] u8 disk_status_bits() const;
+    void disk_start_dma();
+    void disk_step();
+    void disk_build_track();
 
     GuestMemory& memory_;
     Runtime& runtime_;
@@ -334,6 +351,31 @@ private:
     Cia cia_b_{};
     u8 cia_read(Cia& cia, u32 reg, bool is_a);
     void cia_write(Cia& cia, u32 reg, u8 value, bool is_a);
+
+    // Disk. The image is the raw ADF; `track` is the MFM encoding of the
+    // currently selected cylinder and head, rebuilt when the head moves.
+    struct Disk {
+        std::vector<u8> image;
+        std::vector<u8> track;     // MFM bytes for the selected track
+        u32 track_index = 0xffffffffu;   // which track `track` holds
+        u32 cylinder = 0;
+        u32 side = 0;
+        bool motor = false;
+        bool selected = false;
+        bool step_line = true;     // /STEP is active low
+        // /CHNG is asserted when a disk is swapped and stays asserted until
+        // the head steps with a disk in the drive. Loaders step in a loop
+        // waiting for exactly that, so getting it wrong hangs them.
+        bool change_flag = true;
+        bool direction_out = false;
+        // DMA in progress.
+        bool dma_active = false;
+        u32 words_remaining = 0;
+        u32 position = 0;          // byte position within the track
+        u32 length_written = 0;    // DSKLEN is written twice to arm a transfer
+        u16 last_length = 0;
+        u64 reads = 0;
+    } disk_;
 
     // Input.
     u16 joy_dat_[2] = {0, 0};

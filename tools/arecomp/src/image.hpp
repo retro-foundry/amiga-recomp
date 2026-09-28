@@ -52,6 +52,7 @@ public:
 private:
     static bool load_flat(const Manifest& manifest, Image& out, std::string& error);
     static bool load_hunk(const Manifest& manifest, Image& out, std::string& error);
+    static bool load_adf(const Manifest& manifest, Image& out, std::string& error);
 
     std::vector<Segment> segments_;
     std::vector<Symbol> symbols_;

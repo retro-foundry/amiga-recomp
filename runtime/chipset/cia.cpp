@@ -39,9 +39,10 @@ enum : u8 {
 u8 Chipset::cia_read(Cia& cia, u32 index, bool is_a) {
     switch (index) {
     case CIA_PRA:
-        // CIA-A port A carries the two fire buttons, active low, plus the
-        // power LED and the OVL line.
-        return is_a ? cia.pra : cia.pra;
+        // CIA-A port A carries the two fire buttons in bits 6 and 7, the OVL
+        // and LED lines in bits 0 and 1, and the drive status in between.
+        if (is_a) return static_cast<u8>((cia.pra & 0xc3) | disk_status_bits());
+        return cia.pra;
     case CIA_PRB: return cia.prb;
     case CIA_DDRA: return cia.ddra;
     case CIA_DDRB: return cia.ddrb;
@@ -71,7 +72,12 @@ u8 Chipset::cia_read(Cia& cia, u32 index, bool is_a) {
 void Chipset::cia_write(Cia& cia, u32 index, u8 value, bool is_a) {
     switch (index) {
     case CIA_PRA: cia.pra = value; break;
-    case CIA_PRB: cia.prb = value; break;
+    case CIA_PRB:
+        cia.prb = value;
+        // CIA-B port B is the drive control register: motor, select, side,
+        // direction and step.
+        if (!is_a) disk_write_ciab_prb(value);
+        break;
     case CIA_DDRA: cia.ddra = value; break;
     case CIA_DDRB: cia.ddrb = value; break;
     case CIA_TALO: cia.latch_a = static_cast<u16>((cia.latch_a & 0xff00) | value); break;
@@ -79,11 +85,22 @@ void Chipset::cia_write(Cia& cia, u32 index, u8 value, bool is_a) {
         cia.latch_a = static_cast<u16>((cia.latch_a & 0x00ff) | (value << 8));
         // Writing the high byte of a stopped timer loads it immediately.
         if (!(cia.cra & CR_START)) cia.timer_a = cia.latch_a;
+        // In one-shot mode the write also starts the timer, whatever the start
+        // bit says. Games rely on this to time a single interval without
+        // having to stop the timer afterwards.
+        if (cia.cra & CR_RUNMODE) {
+            cia.timer_a = cia.latch_a;
+            cia.cra = static_cast<u8>(cia.cra | CR_START);
+        }
         break;
     case CIA_TBLO: cia.latch_b = static_cast<u16>((cia.latch_b & 0xff00) | value); break;
     case CIA_TBHI:
         cia.latch_b = static_cast<u16>((cia.latch_b & 0x00ff) | (value << 8));
         if (!(cia.crb & CR_START)) cia.timer_b = cia.latch_b;
+        if (cia.crb & CR_RUNMODE) {
+            cia.timer_b = cia.latch_b;
+            cia.crb = static_cast<u8>(cia.crb | CR_START);
+        }
         break;
     case CIA_ICR:
         if (value & ICR_SET) cia.icr_mask = static_cast<u8>(cia.icr_mask | (value & 0x1f));

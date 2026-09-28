@@ -64,6 +64,9 @@ bool Manifest::load(const std::string& path, Manifest& out, std::string& error) 
         return false;
     }
     out.load_address = input.integer("load_address", 0);
+    out.disk_path = input.string("disk");
+    if (out.disk_path.empty() && out.input_mode == InputMode::Adf)
+        out.disk_path = out.input_path;
 
     out.video_standard = doc.table("video").string("standard", "pal");
 
@@ -102,6 +105,19 @@ bool Manifest::load(const std::string& path, Manifest& out, std::string& error) 
             return false;
         }
         out.regions.push_back(region);
+    }
+
+    for (const toml::Table& t : doc.array("adf.load")) {
+        AdfLoadSpec load;
+        load.offset = t.integer("offset", 0);
+        load.length = t.integer("length", 0);
+        load.address = t.integer("address", 0);
+        load.executable = t.boolean("executable", true);
+        if (load.length == 0) {
+            error = "[[adf.load]] with a zero length";
+            return false;
+        }
+        out.adf_loads.push_back(load);
     }
 
     for (const toml::Table& t : doc.array("code.range")) {
@@ -152,6 +168,20 @@ bool Manifest::load(const std::string& path, Manifest& out, std::string& error) 
     out.extra_entry_points = doc.table("code").integers("entry_points");
     out.harness_halt_address = doc.table("harness").integer("halt_address", 0);
     out.enable_chipset = doc.table("machine").boolean("chipset", true);
+
+    const toml::Table& cap = doc.table("capture");
+    if (doc.has_table("capture")) {
+        out.capture.enabled = cap.boolean("enabled", true);
+        out.capture.trigger = cap.integer("trigger", 0);
+        out.capture.start = cap.integer("start", 0);
+        out.capture.size = cap.integer("size", 0x80000);
+        out.capture.halt = cap.boolean("halt", true);
+        out.capture.path = cap.string("path", "capture.bin");
+        if (out.capture.enabled && out.capture.trigger == 0) {
+            error = "[capture] needs a trigger address";
+            return false;
+        }
+    }
 
     const toml::Table& ws = doc.table("widescreen");
     out.widescreen.enabled = ws.boolean("enabled", false);
