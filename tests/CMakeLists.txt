@@ -15,6 +15,7 @@ arecomp_add_test(test_semantics cpu/semantics_test.cpp)
 arecomp_add_test(test_memory memory/guest_memory_test.cpp)
 arecomp_add_test(test_interpreter integration/interpreter_test.cpp)
 arecomp_add_test(test_isa_sweep_values integration/isa_sweep_test.cpp)
+arecomp_add_test(test_chipset chipset/chipset_test.cpp)
 arecomp_add_test(test_manifest integration/manifest_test.cpp)
 target_link_libraries(test_manifest PRIVATE arecomp_core)
 

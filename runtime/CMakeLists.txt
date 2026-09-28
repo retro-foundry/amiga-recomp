@@ -30,6 +30,12 @@ set(ARECOMP_RUNTIME_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/cpu/runtime.cpp
   ${CMAKE_CURRENT_LIST_DIR}/cpu/dispatch.cpp
   ${CMAKE_CURRENT_LIST_DIR}/cpu/hooks.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/chipset/chipset.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/chipset/copper.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/chipset/display.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/chipset/blitter.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/chipset/cia.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/chipset/paula.cpp
 )
 
 if(ARECOMP_ENABLE_INTERPRETER)

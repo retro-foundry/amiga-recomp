@@ -72,10 +72,10 @@ Tracking AMIGA_RECOMP.md §66. Update this table as work lands.
 | 2 | Complete effective-address modes | **done** |
 | 3 | Full MC68000 user instruction set + differential tests | **done** (sweep-based; randomised fuzzing still to add) |
 | 4 | Exceptions / privilege / interrupts / RTE / STOP | **done** for CPU side; interrupt sources arrive with the chipset |
-| 5 | Amiga memory map, CIA + custom register decode, DMACON/INTENA, beam | not started |
-| 6 | Video: palette, bitplanes, DIW/DDF, modulos, Copper, display out | not started |
-| 7 | Blitter (area, minterms, fill, line, async busy/IRQ) | not started |
-| 8 | Input / Paula audio / CIA timers | not started |
+| 5 | Amiga memory map, CIA + custom register decode, DMACON/INTENA, beam | **done** |
+| 6 | Video: palette, bitplanes, DIW/DDF, modulos, Copper, display out | **done** (headless framebuffer; SDL backend pending) |
+| 7 | Blitter (area, minterms, fill, line, async busy/IRQ) | **done** for area/fill/descending; line mode is approximate |
+| 8 | Input / Paula audio / CIA timers | **done** (audio DMA + interrupts; no host mixer yet) |
 | 9 | Trace-assisted convergence, fallback removal | not started |
 | 10 | Real game snapshot to gameplay, zero fallback | not started (needs game data) |
 | 11 | Hooks / mod API + widescreen enhancement | not started |
