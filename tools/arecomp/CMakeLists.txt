@@ -6,6 +6,7 @@ add_library(arecomp_core STATIC
   src/image.cpp
   src/analyzer.cpp
   src/bootblock.cpp
+  src/diskcheck.cpp
   src/codegen.cpp
   src/project.cpp
 )

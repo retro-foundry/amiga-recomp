@@ -9,6 +9,7 @@
 #include "amiga_recomp/decoder.hpp"
 #include "analyzer.hpp"
 #include "bootblock.hpp"
+#include "diskcheck.hpp"
 #include "codegen.hpp"
 #include "image.hpp"
 #include "manifest.hpp"
@@ -290,6 +291,9 @@ int main(int argc, char** argv) {
     }
 
     if (command == "bootblock") return command_bootblock(manifest_path, show_disassembly);
+    if (command == "diskcheck")
+        return disk_check(manifest_path, from ? static_cast<int>(from) : -1,
+                          show_disassembly);
     if (command == "recompile") return command_recompile(manifest_path, output_dir);
     if (command == "analyze") return command_analyze(manifest_path);
     if (command == "disasm") return command_disasm(manifest_path, from, count);

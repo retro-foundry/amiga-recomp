@@ -163,6 +163,13 @@ void Runtime::note_unknown_target(GuestAddr address) {
 }
 
 u32 Runtime::run_block_at(M68kState& cpu, GuestAddr pc) {
+    if (config_.force_interpreter) {
+        if (interpreter_ == nullptr) {
+            cpu.halted = true;
+            throw FatalError{"force_interpreter set but no interpreter linked", pc};
+        }
+        return interpreter_(cpu, *this);
+    }
     if (BlockFn fn = blocks_.find(pc)) {
         ++stats_.blocks_executed;
         return fn(cpu, *this);
@@ -183,7 +190,7 @@ u32 Runtime::run_block_at(M68kState& cpu, GuestAddr pc) {
 
 void Runtime::step_block(M68kState& cpu) {
     const GuestAddr pc = cpu.pc;
-    if (blocks_.find(pc)) last_block_ = pc;
+    if (!config_.force_interpreter && blocks_.find(pc)) last_block_ = pc;
 
     if (config_.trace_blocks)
         log("[block] %08x d0=%08x a7=%08x sr=%04x", pc, cpu.d[0], cpu.a[7], cpu.sr());

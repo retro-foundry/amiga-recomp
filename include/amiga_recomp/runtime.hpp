@@ -57,6 +57,11 @@ struct RuntimeConfig {
     UnknownTargetPolicy unknown_target = UnknownTargetPolicy::Interpret;
     bool trace_blocks = false;
     bool log_unknown_targets = true;
+    // Ignore the compiled blocks and interpret everything. The two engines
+    // must produce identical guest state, so running a port both ways and
+    // comparing is how a translation bug is caught on real game code rather
+    // than on a synthetic test (AMIGA_RECOMP.md 28.3, 46).
+    bool force_interpreter = false;
 };
 
 // Statistics a port needs in order to claim zero interpreter fallback.

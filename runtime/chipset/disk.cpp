@@ -9,6 +9,8 @@
 // demand, and the game's own loader decodes them back. Nothing here knows
 // anything about any particular loader.
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "amiga_recomp/chipset.hpp"
@@ -120,6 +122,16 @@ void Chipset::disk_build_track() {
     const std::size_t track_offset =
         static_cast<std::size_t>(index) * kSectorsPerTrack * kSectorBytes;
     if (track_offset + kSectorsPerTrack * kSectorBytes > disk_.image.size()) return;
+
+    if (std::getenv("ARECOMP_DISK_TRACE")) {
+        std::fprintf(stderr,
+                     "[disk] build track %u (cyl %u side %u) from image offset "
+                     "%zu, image size %zu, first bytes %02x %02x %02x %02x\n",
+                     index, disk_.cylinder, disk_.side, track_offset,
+                     disk_.image.size(), disk_.image[track_offset],
+                     disk_.image[track_offset + 1], disk_.image[track_offset + 2],
+                     disk_.image[track_offset + 3]);
+    }
 
     disk_.track.reserve(kSectorsPerTrack * 1088 + 512);
     MfmWriter writer(disk_.track);
@@ -257,12 +269,22 @@ void Chipset::disk_start_dma() {
                 break;
             }
         }
-        if (!found) return;            // no sync: the transfer never completes
+        if (!found) {
+            if (std::getenv("ARECOMP_DISK_TRACE"))
+                std::fprintf(stderr, "[disk] NO SYNC $%04x in track %u; the "
+                                     "transfer will never complete\n",
+                             sync, disk_.track_index);
+            return;
+        }
         raise_interrupt(INTF_DSKSYN);
     }
 
     disk_.dma_active = true;
     ++disk_.reads;
+    if (std::getenv("ARECOMP_DISK_TRACE"))
+        std::fprintf(stderr, "[disk] read %llu: track %u, %u words from byte %u\n",
+                     static_cast<unsigned long long>(disk_.reads), disk_.track_index,
+                     disk_.words_remaining, disk_.position);
 }
 
 void Chipset::disk_step() {

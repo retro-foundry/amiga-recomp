@@ -130,6 +130,11 @@ AnalysisResult Analyzer::run() {
     // A hook forces a block boundary so the dispatcher can intercept there
     // (AMIGA_RECOMP.md 8.1, 35).
     for (const HookSpec& hook : manifest_.hooks) result.leaders.insert(hook.address);
+    // The capture trigger is a hook too. Without a boundary here the hook is
+    // installed but never fires, because the dispatcher only consults hooks at
+    // block entry.
+    if (manifest_.capture.enabled && manifest_.capture.trigger != 0)
+        result.leaders.insert(manifest_.capture.trigger);
     // Declared indirect targets are entry points in their own right.
     for (const IndirectTargetSpec& spec : manifest_.indirect_targets)
         for (u32 target : spec.targets) result.leaders.insert(target);
