@@ -143,10 +143,12 @@ What works:
 4. That snapshot recompiles to **1361 blocks / 17 KB of game code**, which runs
    natively at about 5.6x Amiga speed with **zero interpreter fallbacks**.
 
-Current state: runs 400 million guest cycles with **no faults**, 16 million
-native blocks, 2877 interrupts taken, 52+ disk reads, and a display the game
-has programmed (640x200, palette in use, pixels drawn). It sits in the wait
-loop at `$12f98` polling a counter at `$a884`.
+Current state: **converged**. Runs 400 million guest cycles with no faults,
+**31.7 million native blocks**, 1.75 million interpreter fallbacks, 2877
+interrupts, 52+ disk reads, and **renders real graphics** (640x200, four
+colours, structured image). `tools/converge.py` reports nothing further to
+add: the only unresolved targets left are 104 addresses in $43xxx, which the
+game loads from disk at run time and which are empty in the snapshot.
 
 Four real bugs were found by getting this far, all now fixed:
 
@@ -173,8 +175,10 @@ natively.
 
 ## Next actions
 
-1. **Milestone 10, Vroom**: find why the game's counter at `$a884` never
-   advances although its interrupts are firing, then handle the $43xxx overlay.
+1. **Milestone 10, Vroom**: the game still sits in the wait loop at `$12f98`
+   although the counter's incrementer at `$a4f8` is now compiled and its
+   interrupts fire. Next: trace whether that path is actually taken, and
+   handle the $43xxx overlay with a later capture.
 2. **Milestone 10 generally.** Everything else is in place.
    Capture with ami9000 after the game has decrunched and taken over the
    machine (docs/decrunching.md), write a manifest, and converge the indirect

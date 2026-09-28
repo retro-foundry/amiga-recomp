@@ -99,6 +99,39 @@ common formats are well documented and several have permissively licensed
 implementations. This is the right approach for a title packed with a
 standard file cruncher and otherwise OS-friendly.
 
+## The convergence loop, and its trap
+
+`tools/converge.py` automates step 2: it reads a port's run log, takes every
+address the dispatcher reached with no compiled block, and records them in the
+manifest as entry points.
+
+```sh
+arecomp recompile ports/game.toml -o projects/game
+projects/game/build/game data.bin frame.ppm 400000000 2> run.log
+python tools/converge.py ports/game.toml run.log --snapshot capture/mem.bin
+```
+
+Repeat until it reports nothing new.
+
+**The trap**: an address the guest executed is not necessarily code *in the
+snapshot*. A game that loads or decrunches at run time fills regions that were
+empty, or overwrites regions that held something else, after the capture was
+taken. Translating the snapshot's contents there produces blocks that do not
+describe what will actually be in memory, and the port jumps into nonsense.
+
+Two defences, both in place:
+
+- `converge.py` refuses addresses whose snapshot memory is entirely zero, and
+  says so. Those are regions the game fills later.
+- The runtime watches the pages its blocks were translated from. A guest write
+  that lands inside a block's own bytes retires that block, and execution
+  there falls back to the interpreter, which reads memory as it now is. This
+  is the section 32 mechanism, and it is what makes the loop safe: a stale
+  translation degrades to interpretation instead of crashing.
+
+Neither is a substitute for capturing at a sensible moment. If most of a game
+is being interpreted, the snapshot was taken too early.
+
 ## What the framework does about it
 
 - `arecomp analyze` stops discovery at undecodable opcodes and says so, rather
@@ -111,6 +144,10 @@ standard file cruncher and otherwise OS-friendly.
 - `[[code.range]]`, `[[indirect_target]]` and `[code] entry_points` in the
   manifest are how discovered regions are recorded. They are metadata, not
   reconstructed source.
+- `[capture]` writes memory, machine state and custom chip state the moment
+  execution reaches an address, turning a decrunched game into a snapshot.
+- Blocks carry the byte range they were translated from, so a write that
+  invalidates one retires exactly that block.
 
 ## Diagnosing which one you have
 
