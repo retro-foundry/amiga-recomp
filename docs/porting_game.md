@@ -90,8 +90,24 @@ projects/<id>/build-sdl/<id> <image>
 ```
 
 Arrow keys and Space (or Left Ctrl) drive joystick port 1, which is where a
-game looks for a joystick. Escape quits, F11 toggles fullscreen. The picture
-keeps the Amiga's pixel aspect and is fitted to the window.
+game looks for a joystick. The mouse drives port 0, which is what most menus
+want. Escape quits, F11 toggles fullscreen. The picture keeps the Amiga's
+pixel aspect and is fitted to the window.
+
+A gamepad drives the same two ports, and is picked up whether it was plugged
+in before the port started or during play:
+
+| Gamepad | Amiga |
+|---|---|
+| D-pad, left stick | Joystick port 1 directions |
+| A / B / X / Y, right shoulder, right trigger | The stick's one fire button |
+| Right stick | Mouse pointer on port 0 |
+| Left shoulder, left trigger | Left mouse button |
+
+Keyboard and gamepad feed the same port rather than one each, so either can
+be picked up mid-game and holding both is not a conflict. The right stick is
+mapped to the mouse because a game whose menu wants a pointer would otherwise
+be unreachable from the controller it is played with.
 
 Without SDL the same port builds headless and writes a PPM of its last frame
 instead, which is what the tests and replay harnesses use:
