@@ -36,6 +36,7 @@ set(ARECOMP_RUNTIME_SOURCES
   ${CMAKE_CURRENT_LIST_DIR}/chipset/blitter.cpp
   ${CMAKE_CURRENT_LIST_DIR}/chipset/cia.cpp
   ${CMAKE_CURRENT_LIST_DIR}/chipset/disk.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/chipset/state.cpp
   ${CMAKE_CURRENT_LIST_DIR}/chipset/paula.cpp
   ${CMAKE_CURRENT_LIST_DIR}/platform/sdl_platform.cpp
   ${CMAKE_CURRENT_LIST_DIR}/debug/ppm.cpp

@@ -2,6 +2,8 @@
 #include "amiga_recomp/chipset.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 
 namespace arecomp {
 
@@ -201,6 +203,19 @@ void Chipset::write_register(u32 offset, u16 value, bool from_copper) {
         if (value & 0x8000) r = static_cast<u16>(r | bits);
         else r = static_cast<u16>(r & ~bits);
     };
+
+    // A targeted trace of the registers that decide whether interrupts and DMA
+    // happen at all. These are the first things to check when a game sits in a
+    // wait loop (AMIGA_RECOMP.md 33).
+    static const bool trace_control = std::getenv("ARECOMP_REG_TRACE") != nullptr;
+    if (trace_control && (offset == reg::INTENA || offset == reg::INTREQ ||
+                          offset == reg::DMACON || offset == reg::COP1LCH ||
+                          offset == reg::COP1LCL || offset == reg::COPJMP1 ||
+                          offset == reg::BPLCON0)) {
+        std::fprintf(stderr, "[reg] %s <- $%04x  (vpos %u, %s)\n",
+                     custom_register_name(offset), value, vpos_,
+                     from_copper ? "copper" : "cpu");
+    }
 
     switch (offset) {
     case reg::DMACON:

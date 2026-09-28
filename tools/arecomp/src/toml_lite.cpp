@@ -221,7 +221,35 @@ bool Document::parse(const std::string& text, std::string& error) {
             return false;
         }
         const std::string key = trim(trimmed.substr(0, equals));
-        const std::string rest = trim(trimmed.substr(equals + 1));
+        std::string rest = trim(trimmed.substr(equals + 1));
+
+        // An array may span lines. A manifest that records hundreds of
+        // discovered entry points is unreadable on one line, so keep reading
+        // until the brackets balance.
+        if (!rest.empty() && rest.front() == '[') {
+            int depth = 0;
+            bool in_string = false;
+            auto count = [&](const std::string& text) {
+                for (char c : text) {
+                    if (c == '"') in_string = !in_string;
+                    else if (!in_string && c == '[') ++depth;
+                    else if (!in_string && c == ']') --depth;
+                }
+            };
+            count(rest);
+            while (depth > 0 && std::getline(stream, line)) {
+                ++lineno;
+                const std::string more = trim(strip_comment(line));
+                if (more.empty()) continue;
+                rest += ' ';
+                rest += more;
+                count(more);
+            }
+            if (depth != 0) {
+                error = "line " + std::to_string(lineno) + ": unterminated array";
+                return false;
+            }
+        }
         if (key.empty()) {
             error = "line " + std::to_string(lineno) + ": empty key";
             return false;

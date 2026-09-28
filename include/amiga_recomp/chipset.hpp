@@ -127,6 +127,14 @@ public:
         on_frame_ = std::move(fn);
     }
 
+    // --- machine state (AMIGA_RECOMP.md 39) --------------------------------
+    // A snapshot is memory *and* machine state. Restoring guest RAM without
+    // the custom chips leaves the Copper pointing at address zero, DMA and
+    // interrupts disabled, and the display unprogrammed -- a machine the game
+    // never expects to find itself on.
+    bool save_state(const std::string& path) const;
+    bool load_state(const std::string& path);
+
     // --- disk ------------------------------------------------------------
     // Insert a raw ADF. The chipset builds MFM track images from it on demand,
     // so a game's own trackloader reads it exactly as it would a real disk

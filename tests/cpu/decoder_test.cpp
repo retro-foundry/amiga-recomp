@@ -319,6 +319,32 @@ TEST_CASE("cmpm is not decoded as eor") {
     CHECK(eor.mnemonic == Mnemonic::Eor);
 }
 
+TEST_CASE("cmpa.l with an address-register source is not cmpm") {
+    // $bdcb is cmpa.l a3,a6. It shares CMPM's mask but sets the size field to
+    // 11, which CMPM has no encoding for. Decoding it as cmpm.l (a3)+,(a6)+
+    // would postincrement two registers the program only meant to compare --
+    // a difference that turns a loop-termination test into a runaway pointer.
+    const auto in = decode_words({0xbdcb});
+    CHECK(in.mnemonic == Mnemonic::Cmpa);
+    CHECK(in.size == Size::Long);
+    CHECK(in.src.kind == EAKind::AddrReg);
+    CHECK_EQ(in.src.reg, 3u);
+    CHECK(in.dst.kind == EAKind::AddrReg);
+    CHECK_EQ(in.dst.reg, 6u);
+
+    // The word form of the same shape is CMPA.W, not CMPM either.
+    const auto word = decode_words({0xbccb});
+    CHECK(word.mnemonic == Mnemonic::Cmpa);
+    CHECK(word.size == Size::Word);
+
+    // And a genuine CMPM still decodes as one.
+    const auto real = decode_words({0xbd8b});
+    CHECK(real.mnemonic == Mnemonic::Cmpm);
+    CHECK(real.size == Size::Long);
+    CHECK(real.src.kind == EAKind::PostInc);
+    CHECK(real.dst.kind == EAKind::PostInc);
+}
+
 TEST_CASE("abcd and sbcd separate register and memory forms") {
     const auto reg = decode_words({0xc300});   // abcd d0,d1
     CHECK(reg.mnemonic == Mnemonic::Abcd);

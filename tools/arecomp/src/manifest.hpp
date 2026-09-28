@@ -89,6 +89,9 @@ struct Manifest {
     // snapshot port needs it too whenever the game keeps loading from disk,
     // which most do.
     std::string disk_path;
+    // Saved custom chip state that goes with a snapshot. Without it the game
+    // resumes on a machine whose chips it never configured.
+    std::string chipset_state_path;
     u32 load_address = 0;      // for flat images
 
     std::string video_standard = "pal";

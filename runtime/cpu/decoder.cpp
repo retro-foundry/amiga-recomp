@@ -725,7 +725,11 @@ DecodedInstruction Decoder::decode(u32 pc) const {
             finish(group == 0x9 ? Mnemonic::Subx : Mnemonic::Addx);
             goto done;
         }
-        if (group == 0xb && (op & 0x0138) == 0x0108) {   // CMPM
+        // CMPM. The size field must be a real size: with bits 7-6 set this is
+        // CMPA.L with an address-register source, which shares the rest of the
+        // pattern. Decoding that as CMPM would silently postincrement two
+        // registers that the program only meant to compare.
+        if (group == 0xb && (op & 0x0138) == 0x0108 && ((op >> 6) & 3) != 3) {
             in.size = size_from_field((op >> 6) & 3);
             in.src = reg_operand(EAKind::PostInc, reg);
             in.dst = reg_operand(EAKind::PostInc, reg9);

@@ -8,6 +8,9 @@
 #include "amiga_recomp/chipset.hpp"
 #include "amiga_recomp/runtime.hpp"
 
+#include <cstdio>
+#include <string>
+
 #include "test_support.hpp"
 
 using namespace arecomp;
@@ -584,6 +587,55 @@ TEST_CASE("joystick directions reach joydat") {
     Machine m;
     m.chipset.set_joystick(1, false, false, true, false, false);
     CHECK_EQ(m.peek(reg::JOY1DAT) & 0x0200u, 0x0200u);   // left
+}
+
+// ---------------------------------------------------------------------------
+// Machine state
+// ---------------------------------------------------------------------------
+
+TEST_CASE("chipset state survives a save and restore") {
+    // A snapshot is memory and machine state. Restoring one without the other
+    // leaves the Copper pointing at address zero and DMA disabled, which is a
+    // machine no game ever configured (AMIGA_RECOMP.md 39).
+    const std::string path = std::string(ARECOMP_TESTROM_DIR) + "/../../chipset.state";
+
+    u32 saved_copper_source = 0;
+    {
+        Machine m;
+        m.setup_lores_screen(2);
+        m.poke(reg::COP1LCH, 0x0003);
+        m.poke(reg::COP1LCL, 0x0000);
+        m.poke(reg::COPJMP1, 0);
+        m.poke(reg::INTENA, 0x8000 | INTF_INTEN | INTF_COPER | INTF_VERTB);
+        m.poke(reg::DMACON, 0x8000 | DMAF_MASTER | DMAF_RASTER | DMAF_COPPER);
+        m.poke(reg::COLOR00 + 8, 0x0abc);
+        m.run_lines(5);
+        saved_copper_source = m.chipset.peek_register(reg::COP1LCL);
+        CHECK(m.chipset.save_state(path));
+    }
+
+    {
+        Machine fresh;
+        // A fresh chipset has none of it.
+        CHECK_EQ(fresh.chipset.peek_register(reg::INTENA), 0u);
+        CHECK_EQ(fresh.chipset.peek_register(reg::DMACON) & DMAF_MASTER, 0u);
+
+        CHECK(fresh.chipset.load_state(path));
+        CHECK_EQ(fresh.chipset.peek_register(reg::INTENA),
+                 INTF_INTEN | INTF_COPER | INTF_VERTB);
+        CHECK_EQ(fresh.chipset.peek_register(reg::DMACON) & DMAF_ALL,
+                 DMAF_MASTER | DMAF_RASTER | DMAF_COPPER);
+        CHECK_EQ(fresh.chipset.peek_register(reg::COP1LCL), saved_copper_source);
+        CHECK_EQ(fresh.chipset.peek_register(reg::COLOR00 + 8), 0x0abcu);
+        CHECK_EQ(fresh.chipset.peek_register(reg::BPLCON0) >> BPLCON0_BPU_SHIFT, 2u);
+    }
+    std::remove(path.c_str());
+}
+
+TEST_CASE("loading rubbish as chipset state is refused, not half applied") {
+    Machine m;
+    CHECK(!m.chipset.load_state("no-such-file-at-all.state"));
+    CHECK_EQ(m.chipset.peek_register(reg::INTENA), 0u);
 }
 
 ARECOMP_TEST_MAIN()

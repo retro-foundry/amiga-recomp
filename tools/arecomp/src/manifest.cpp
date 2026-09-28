@@ -65,6 +65,7 @@ bool Manifest::load(const std::string& path, Manifest& out, std::string& error) 
     }
     out.load_address = input.integer("load_address", 0);
     out.disk_path = input.string("disk");
+    out.chipset_state_path = input.string("chipset_state");
     if (out.disk_path.empty() && out.input_mode == InputMode::Adf)
         out.disk_path = out.input_path;
 

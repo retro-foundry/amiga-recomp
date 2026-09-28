@@ -122,6 +122,9 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             << "// Creates and maps the custom chips, and attaches them to the\n"
             << "// runtime. Returns nullptr when this port has no chipset.\n"
             << "Chipset* configure_chipset(GuestMemory& memory, Runtime& runtime);\n\n"
+            << "// The chipset this port created, for hooks that need it.\n"
+            << "// Null when the port has none.\n"
+            << "Chipset* active_chipset();\n\n"
             << "// Inserts the disk image, so the game's own trackloader can read\n"
             << "// it. Returns false when this port does not boot from a disk.\n"
             << "bool insert_disk(Chipset& chipset, const std::string& path);\n\n"
@@ -146,6 +149,8 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             << "#include \"amiga_recomp/memdump.hpp\"\n"
             << "#include \"patch/hooks.hpp\"\n\n"
             << "namespace port {\n\n"
+            << "namespace { Chipset* g_chipset = nullptr; }\n\n"
+            << "Chipset* active_chipset() { return g_chipset; }\n\n"
             << "void configure_memory(GuestMemory& memory) {\n";
         for (const MemoryRegionSpec& r : manifest.regions) {
             out << "    memory.add_ram(" << hex(r.start) << ", " << hex(r.size) << ", "
@@ -204,6 +209,9 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
                 << hex(manifest.capture.start) << ", " << hex(manifest.capture.size)
                 << ",\n                                        \""
                 << escape_backslashes(manifest.capture.path) << "\");\n"
+                << "            if (Chipset* c = active_chipset()) "
+                   "c->save_state(\""
+                << escape_backslashes(manifest.capture.path) << ".chipset\");\n"
                 << "            dump_cpu_state(cpu, \""
                 << escape_backslashes(manifest.capture.path) << ".toml\");\n"
                 << "            std::fprintf(stderr, \"[capture] %s at $%08x -> "
@@ -237,9 +245,20 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
                 << "    config.widescreen.compensate_modulo = "
                 << (manifest.widescreen.compensate_modulo ? "true" : "false") << ";\n\n"
                 << "    static Chipset chipset(memory, runtime, config);\n"
+                << "    g_chipset = &chipset;\n"
                 << "    chipset.map(memory);\n"
-                << "    runtime.set_hardware(&chipset);\n"
-                << "    return &chipset;\n";
+                << "    runtime.set_hardware(&chipset);\n";
+            if (!manifest.chipset_state_path.empty()) {
+                out << "    // A snapshot is memory and machine state. Without the\n"
+                    << "    // chip state the game resumes on hardware it never\n"
+                    << "    // configured: Copper at address zero, DMA off.\n"
+                    << "    if (!chipset.load_state(\""
+                    << escape_backslashes(manifest.resolve(manifest.chipset_state_path))
+                    << "\"))\n"
+                    << "        std::fprintf(stderr, \"%s: chipset state not "
+                       "restored\\n\", kName);\n";
+            }
+            out << "    return &chipset;\n";
         } else {
             out << "    (void)memory;\n    (void)runtime;\n    return nullptr;\n";
         }

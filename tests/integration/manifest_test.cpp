@@ -60,6 +60,31 @@ TEST_CASE("arrays of tables keep their order and their keys") {
     CHECK_EQ(regions[0].integer("start"), 0u);
     CHECK_STR_EQ(regions[1].string("kind"), "slow");
 }
+TEST_CASE("an array may span several lines") {
+    // A manifest that records hundreds of discovered entry points is
+    // unreadable on one line, so the parser has to follow the brackets.
+    std::string error;
+    const auto doc = parse(
+        "[code]\n"
+        "entry_points = [\n"
+        "  0x00001000, 0x00001010,   # a comment inside the array\n"
+        "  0x00001020,\n"
+        "  0x00001030\n"
+        "]\n",
+        error);
+    CHECK_STR_EQ(error, "");
+    const auto values = doc.table("code").integers("entry_points");
+    CHECK_EQ(values.size(), 4u);
+    CHECK_EQ(values[0], 0x1000u);
+    CHECK_EQ(values[3], 0x1030u);
+}
+
+TEST_CASE("an unterminated array is an error, not a truncated list") {
+    std::string error;
+    toml::Document doc;
+    CHECK(!doc.parse("[code]\nentry_points = [1, 2, 3\n", error));
+}
+
 
 TEST_CASE("a comment inside a quoted string is not stripped") {
     std::string error;

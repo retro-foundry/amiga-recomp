@@ -143,18 +143,39 @@ What works:
 4. That snapshot recompiles to **1361 blocks / 17 KB of game code**, which runs
    natively at about 5.6x Amiga speed with **zero interpreter fallbacks**.
 
-Where it stops: the game's own level loader at `$1d470` reads one track
-(cylinder 10) and the table copy that follows at `$1d5cc` never finds its
-`$ffffffff` terminator, so it walks off the end of memory. The runtime
-diagnoses this clearly (`bus error: read access to $00100000 from pc=$0001d5cc`).
-The disk subsystem is verified against an independent MFM decoder and is good
-enough for the boot loader, so the remaining difference is something specific
-about this loader's expectations. Next step is to trace what `$1d470` does with
-the words it receives.
+Current state: runs 400 million guest cycles with **no faults**, 16 million
+native blocks, 2877 interrupts taken, 52+ disk reads, and a display the game
+has programmed (640x200, palette in use, pixels drawn). It sits in the wait
+loop at `$12f98` polling a counter at `$a884`.
+
+Four real bugs were found by getting this far, all now fixed:
+
+1. **A 68000 decoder bug.** `cmpa.l a3,a6` ($bdcb) was decoded as
+   `cmpm.l (a3)+,(a6)+`, because the CMPM pattern was matched without checking
+   that the size field was a real size. That silently postincremented two
+   registers the game only meant to compare, turning a loop-termination test
+   into a runaway pointer. Regression test in tests/cpu/decoder_test.cpp.
+2. **The wrong file in the drive.** A snapshot port passed argv[1] to
+   insert_disk, so the game had its own 512 KB memory image in the floppy
+   drive instead of the ADF.
+3. **Chip state was never captured.** A snapshot is memory *and* machine state
+   (section 39). Without the chip state the Copper resumed pointing at address
+   zero, ran through low memory interpreting 68k code as a Copper list, and
+   wrote `INTENA <- $4eb9`, clearing the master interrupt enable for good.
+4. **The capture trigger did not force a block boundary**, so a trigger landing
+   mid-block installed a hook that never fired.
+
+Remaining: 64 unknown targets, all in $43xxx, which is **empty in the snapshot**
+-- the game loads that code from disk at run time. Compiling it from the
+snapshot translates zeros, which is the overlay case in section 31. It needs
+either a later capture or per-region translation. Everything else runs
+natively.
 
 ## Next actions
 
-1. **Milestone 10 needs a real game snapshot.** Everything else is in place.
+1. **Milestone 10, Vroom**: find why the game's counter at `$a884` never
+   advances although its interrupts are firing, then handle the $43xxx overlay.
+2. **Milestone 10 generally.** Everything else is in place.
    Capture with ami9000 after the game has decrunched and taken over the
    machine (docs/decrunching.md), write a manifest, and converge the indirect
    targets until the fallback count is zero. Blocked on data, not on code.
