@@ -56,6 +56,30 @@ statically generated code.
 Compare against the reference: same input replay, same frames, same audio,
 same final state. `tests/differential/` shows the pattern.
 
+## 6a. Play it
+
+Build the port with the SDL backend and it opens a window:
+
+```sh
+cmake -S projects/<id> -B projects/<id>/build-sdl -G Ninja       -DARECOMP_WITH_SDL=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build projects/<id>/build-sdl
+projects/<id>/build-sdl/<id> <image>
+```
+
+Arrow keys and Space (or Left Ctrl) drive joystick port 1, which is where a
+game looks for a joystick. Escape quits, F11 toggles fullscreen. The picture
+keeps the Amiga's pixel aspect and is fitted to the window.
+
+Without SDL the same port builds headless and writes a PPM of its last frame
+instead, which is what the tests and replay harnesses use:
+
+```sh
+projects/<id>/build/<id> <image> frame.ppm 400000000
+```
+
+The third argument is a guest cycle budget, so a port that hangs during
+bring-up stops instead of spinning.
+
 ## 7. Then, and only then, enhance
 
 Hooks, modern input, and [widescreen.md](widescreen.md). Enhancements layered
