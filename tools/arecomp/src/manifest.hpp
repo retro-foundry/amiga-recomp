@@ -93,6 +93,18 @@ struct Manifest {
     // synthetic test programs and replay harnesses, never by a real game.
     u32 harness_halt_address = 0;
 
+    // Whether the generated port instantiates the custom chips. True for a
+    // real game; the synthetic CPU-only test programs turn it off.
+    bool enable_chipset = true;
+
+    // Level 1 widescreen (docs/widescreen.md). Off unless the port asks.
+    struct WidescreenSpec {
+        bool enabled = false;
+        u32 extra_left = 0;
+        u32 extra_right = 0;
+        bool compensate_modulo = true;
+    } widescreen;
+
     // Loads and validates. Returns false with a human-readable reason.
     static bool load(const std::string& path, Manifest& out, std::string& error);
 

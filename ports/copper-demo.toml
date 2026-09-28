@@ -1,0 +1,51 @@
+# End-to-end demonstration: 68000 code driving the real custom chips, then
+# statically recompiled and run as a native program.
+#
+# Synthetic, not a game. It exists to prove the whole pipeline in one go:
+# decode, discover, translate, compile, and run against the chipset.
+
+[game]
+name = "Copper Demo"
+id = "copper-demo"
+machine = "a500-pal"
+
+[input]
+type = "flat"
+path = "../testroms/synthetic/copper_demo.bin"
+load_address = 0x00001000
+
+[cpu]
+entry = 0x00001000
+sr = 0x2700
+a = [0, 0, 0, 0, 0, 0, 0, 0x0007f000]
+
+[video]
+standard = "pal"
+
+[machine]
+chipset = true
+
+[recompiler]
+blocks_per_file = 1000
+
+[harness]
+halt_address = 0x00f00000
+
+# Level 1 widescreen. The bitmap is 320 pixels wide behind a 256 pixel window,
+# so there are exactly 32 spare pixels each side to reveal.
+# See docs/widescreen.md.
+[widescreen]
+enabled = true
+extra_left = 32
+extra_right = 32
+compensate_modulo = true
+
+[[memory.region]]
+start = 0x00000000
+size = 0x00080000
+kind = "chip"
+permissions = "rwx"
+
+[[code.range]]
+start = 0x00001000
+end = 0x00001140

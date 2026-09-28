@@ -78,7 +78,7 @@ Tracking AMIGA_RECOMP.md §66. Update this table as work lands.
 | 8 | Input / Paula audio / CIA timers | **done** (audio DMA + interrupts; no host mixer yet) |
 | 9 | Trace-assisted convergence, fallback removal | not started |
 | 10 | Real game snapshot to gameplay, zero fallback | not started (needs game data) |
-| 11 | Hooks / mod API + widescreen enhancement | not started |
+| 11 | Hooks / mod API + widescreen enhancement | **done** (hooks + level 1 widescreen; level 2 is per-game) |
 
 ## Layout
 
@@ -127,8 +127,34 @@ See [docs/widescreen.md](docs/widescreen.md). Short version:
 
 ## Next actions
 
-1. Milestone 10 needs a real game snapshot — requires user-supplied game data
-   and an ami9000 capture. Blocked on data, not on code.
-2. Chip RAM contention timing (`TimingMode::ChipExact`) is stubbed to
-   `BusAware`; only matters for raster-trick-heavy titles.
-3. AGA / 68020 extension points exist but are unimplemented (§61, §62).
+1. **Milestone 10 needs a real game snapshot.** Everything else is in place.
+   Capture with ami9000 after the game has decrunched and taken over the
+   machine (docs/decrunching.md), write a manifest, and converge the indirect
+   targets until the fallback count is zero. Blocked on data, not on code.
+2. **SDL platform backend.** The chipset renders to a `Framebuffer` and a
+   frame callback; nothing presents it yet except the PPM writer. This is the
+   next piece of real work.
+3. **OS shim generator** (`arecomp osshim`) reading the NDK `.fd` files.
+   Format is understood, hook machinery exists. See docs/os_interaction.md.
+   Only needed for OS-friendly games, which is a minority.
+4. Audio has DMA and interrupts but no host mixer.
+5. Blitter line mode is approximate; area mode is tested.
+6. Chip RAM contention (`TimingMode::ChipExact`) is stubbed to `BusAware`.
+7. AGA / 68020 extension points exist but are unimplemented (§61, §62).
+
+## Demonstrations that currently work
+
+- `ports/vertical-slice.toml` — the spec's §69 vertical slice, differentially
+  tested against the interpreter.
+- `ports/isa-sweep.toml` — 232 instructions of ISA coverage, differentially
+  tested and pinned to hand-derived values.
+- `ports/copper-demo.toml` — 68000 code programming the custom chips, run as
+  a native executable with widescreen on: 9,500 native blocks, zero
+  interpreter fallbacks, correct raster. Writes a PPM screenshot:
+
+  ```sh
+  arecomp recompile ports/copper-demo.toml -o projects/copper-demo
+  cmake -S projects/copper-demo -B projects/copper-demo/build -G Ninja
+  cmake --build projects/copper-demo/build
+  projects/copper-demo/build/copper-demo       testroms/synthetic/copper_demo.bin frame.ppm
+  ```

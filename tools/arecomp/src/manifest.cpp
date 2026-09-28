@@ -151,6 +151,13 @@ bool Manifest::load(const std::string& path, Manifest& out, std::string& error) 
 
     out.extra_entry_points = doc.table("code").integers("entry_points");
     out.harness_halt_address = doc.table("harness").integer("halt_address", 0);
+    out.enable_chipset = doc.table("machine").boolean("chipset", true);
+
+    const toml::Table& ws = doc.table("widescreen");
+    out.widescreen.enabled = ws.boolean("enabled", false);
+    out.widescreen.extra_left = ws.integer("extra_left", 0);
+    out.widescreen.extra_right = ws.integer("extra_right", 0);
+    out.widescreen.compensate_modulo = ws.boolean("compensate_modulo", true);
 
     if (out.regions.empty()) {
         // A sensible A500 default so simple manifests stay short.

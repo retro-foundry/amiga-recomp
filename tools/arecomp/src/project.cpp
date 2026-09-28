@@ -119,6 +119,9 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             << "// Maps the debug halt sentinel, if the manifest asked for one.\n"
             << "// Does nothing otherwise, so a real port carries no test scaffolding.\n"
             << "void configure_harness(GuestMemory& memory, M68kState& cpu);\n\n"
+            << "// Creates and maps the custom chips, and attaches them to the\n"
+            << "// runtime. Returns nullptr when this port has no chipset.\n"
+            << "Chipset* configure_chipset(GuestMemory& memory, Runtime& runtime);\n\n"
             << "constexpr const char* kName = \"" << manifest.name << "\";\n"
             << "constexpr const char* kDefaultImage = \""
             << escape_backslashes(manifest.input_path) << "\";\n"
@@ -133,6 +136,7 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             << "#include \"port.hpp\"\n\n"
             << "#include <cstdio>\n"
             << "#include <vector>\n\n"
+            << "#include \"amiga_recomp/chipset.hpp\"\n"
             << "#include \"amiga_recomp/halt_device.hpp\"\n"
             << "#include \"patch/hooks.hpp\"\n\n"
             << "namespace port {\n\n"
@@ -178,6 +182,25 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
                 << "                      \"halt-sentinel\");\n";
         } else {
             out << "    (void)memory;\n    (void)cpu;\n";
+        }
+        out << "}\n\n"
+            << "Chipset* configure_chipset(GuestMemory& memory, Runtime& runtime) {\n";
+        if (manifest.enable_chipset) {
+            out << "    ChipsetConfig config;\n"
+                << "    config.standard = VideoStandard::"
+                << (manifest.video_standard == "ntsc" ? "Ntsc" : "Pal") << ";\n"
+                << "    config.widescreen.enabled = "
+                << (manifest.widescreen.enabled ? "true" : "false") << ";\n"
+                << "    config.widescreen.extra_left = " << manifest.widescreen.extra_left << ";\n"
+                << "    config.widescreen.extra_right = " << manifest.widescreen.extra_right << ";\n"
+                << "    config.widescreen.compensate_modulo = "
+                << (manifest.widescreen.compensate_modulo ? "true" : "false") << ";\n\n"
+                << "    static Chipset chipset(memory, runtime, config);\n"
+                << "    chipset.map(memory);\n"
+                << "    runtime.set_hardware(&chipset);\n"
+                << "    return &chipset;\n";
+        } else {
+            out << "    (void)memory;\n    (void)runtime;\n    return nullptr;\n";
         }
         out << "}\n\n"
             << "} // namespace port\n";
@@ -229,6 +252,7 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             "// Entry point for this port. Written once by arecomp; edit freely.\n\n"
             "#include <cstdio>\n"
             "#include <string>\n\n"
+            "#include \"amiga_recomp/ppm.hpp\"\n"
             "#include \"amiga_recomp/runtime.hpp\"\n"
             "#include \"blocks.hpp\"\n"
             "#include \"port.hpp\"\n\n"
@@ -258,7 +282,9 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             "    Runtime runtime(memory, config);\n"
             "#if ARECOMP_ENABLE_INTERPRETER\n"
             "    runtime.set_interpreter(&interpret_block);\n"
-            "#endif\n"
+            "#endif\n\n"
+            "    // The custom chips, if this port has them.\n"
+            "    Chipset* chipset = port::configure_chipset(memory, runtime);\n\n"
             "    generated::install_blocks(runtime.blocks());\n"
             "    port::install_hooks(runtime);\n\n"
             "    port::configure_cpu(cpu);\n\n"
@@ -269,6 +295,17 @@ bool write_project(const Manifest& manifest, const AnalysisResult& analysis,
             "                (unsigned long long)runtime.stats().blocks_executed);\n"
             "    std::printf(\"  interpreter fallbacks: %llu\\n\",\n"
             "                (unsigned long long)runtime.stats().interpreter_fallbacks);\n"
+            "    if (chipset) {\n"
+            "        std::printf(\"  frames rendered      : %llu\\n\",\n"
+            "                    (unsigned long long)chipset->frames_completed());\n"
+            "        std::printf(\"  display              : %ux%u\\n\",\n"
+            "                    chipset->framebuffer().width,\n"
+            "                    chipset->framebuffer().height);\n"
+            "        // A screenshot of the last frame, so a port can be checked\n"
+            "        // without a windowing backend.\n"
+            "        if (argc > 2 && write_ppm_scaled(chipset->framebuffer(), argv[2], 1, 2))\n"
+            "            std::printf(\"  wrote %s\\n\", argv[2]);\n"
+            "    }\n"
             "    return 0;\n"
             "}\n";
         write_if_absent(root / "main.cpp", main_source);

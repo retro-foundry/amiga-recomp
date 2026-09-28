@@ -19,6 +19,10 @@ entry = 0x00001000
 sr = 0x2700
 a = [0, 0, 0, 0, 0, 0, 0, 0x0007f000]
 
+[machine]
+# A pure CPU test program: no custom chips.
+chipset = false
+
 [recompiler]
 emit_instruction_comments = true
 emit_cycle_accounting = true
