@@ -413,12 +413,27 @@ void Chipset::begin_frame() {
 
     // Fix the rendered rectangle for the whole frame.
     recompute_display_window();
+
+    // Widening the window to the left means starting each row further back in
+    // the game's own bitmap. Without this the extra columns on the left would
+    // show data belonging further right, and the picture would tear.
+    if (config_.widescreen.enabled && display_.extra_left_words > 0) {
+        const u32 back = display_.extra_left_words * 2;
+        for (u32 plane = 0; plane < 8; ++plane)
+            bpl_pointer_[plane] = (bpl_pointer_[plane] - back) & kDmaAddressMask;
+    }
+
     const u32 extra_left = display_.extra_left_px;
     const u32 extra_right = display_.extra_right_px;
 
     u32 x0 = display_.diw_start_x > extra_left ? display_.diw_start_x - extra_left : 0;
     u32 x1 = std::min(display_.diw_stop_x + extra_right, kLoresPixelsPerLine);
     if (x1 <= x0) x1 = x0 + 1;
+
+    // Record what the view actually gained, so a port can tell the difference
+    // between what it asked for and what the raster allowed.
+    display_.extra_left_px = display_.diw_start_x - x0;
+    display_.extra_right_px = x1 - std::min(display_.diw_stop_x, x1);
 
     display_.view_x0 = x0;
     display_.view_y0 = display_.diw_start_y;

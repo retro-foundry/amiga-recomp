@@ -141,6 +141,13 @@ public:
     // its bitmap holds, so widening would shear the picture.
     [[nodiscard]] int slack_words(unsigned playfield) const;
 
+    // What the extension actually came to, in lores pixels, after rounding to
+    // whole fetch blocks and clamping to the scan line. A request is not a
+    // promise: a PAL line holds 454 lores pixels in total, and a game whose
+    // display window already reaches the end of the line has nowhere to grow.
+    [[nodiscard]] u32 applied_extra_left() const { return display_.extra_left_px; }
+    [[nodiscard]] u32 applied_extra_right() const { return display_.extra_right_px; }
+
     // --- blitter ---------------------------------------------------------
     [[nodiscard]] bool blitter_busy() const { return blitter_.active; }
 
@@ -245,6 +252,10 @@ private:
         // 40 extra pixels in lores gets 32.
         u32 extra_left_px = 0;
         u32 extra_right_px = 0;
+        // Words gained on the left. The bitplane pointers must walk back by
+        // this much each frame, or the left margin shows the columns that
+        // belong on the right.
+        u32 extra_left_words = 0;
     } display_;
 
     std::array<u32, 8> bpl_pointer_{};   // working pointers, reloaded per frame

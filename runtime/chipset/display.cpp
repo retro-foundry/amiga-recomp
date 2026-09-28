@@ -70,6 +70,7 @@ void Chipset::recompute_display_window() {
     u32 extra_blocks = 0;
     display_.extra_left_px = 0;
     display_.extra_right_px = 0;
+    display_.extra_left_words = 0;
     if (config_.widescreen.enabled) {
         u32 left_blocks = config_.widescreen.extra_left / block_lores_px;
         const u32 right_blocks = config_.widescreen.extra_right / block_lores_px;
@@ -85,6 +86,7 @@ void Chipset::recompute_display_window() {
         // or the picture slides sideways relative to the extra columns.
         display_.extra_left_px = left_blocks * block_lores_px;
         display_.extra_right_px = right_blocks * block_lores_px;
+        display_.extra_left_words = left_blocks;
     }
 
     display_.ddf_start = ddf_start;
