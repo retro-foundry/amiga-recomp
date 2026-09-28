@@ -1,0 +1,36 @@
+# Generated recomp ports live here and are NEVER committed.
+# They contain game-derived code and data.
+/projects/
+
+# Build output
+/build/
+/out/
+cmake-build-*/
+.ninja_*
+*.ninja
+
+# Generated intermediates
+/generated/
+*.o
+*.obj
+*.a
+*.lib
+*.exe
+*.pdb
+*.ilk
+
+# Game data must never be committed
+*.adf
+*.ipf
+*.hdf
+*.rom
+*.uss
+*.snapshot
+capture/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+compile_commands.json
