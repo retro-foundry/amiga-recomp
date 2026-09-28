@@ -181,7 +181,9 @@ u16 Chipset::read_register(u32 offset) {
         regs_[reg::CLXDAT >> 1] = 0;   // cleared by reading
         return value;
     }
-    case reg::POTGOR: return 0xff00;   // no buttons pulled low
+    case reg::POTGOR:
+        // Bit 10 is the right mouse button on port 0, active low.
+        return static_cast<u16>(mouse_right_ ? 0xfb00 : 0xff00);
     case reg::SERDATR: return 0x2000;  // transmit buffer empty
     case reg::DSKBYTR: return 0;
     default:
@@ -522,21 +524,39 @@ void Chipset::end_line() {
 void Chipset::set_joystick(unsigned port, bool up, bool down, bool left, bool right,
                            bool fire) {
     if (port > 1) return;
-    // JOYxDAT encodes the directions as a pair of gray-coded counters. Games
-    // read bit 1 as "vertical" and bit 9 as "horizontal", with bit 0 and bit 8
-    // exclusive-ored in to give direction (AMIGA.md, input).
-    u16 value = 0;
-    if (right) value |= 0x0002;
-    if (left) value |= 0x0200;
-    if (down) value |= 0x0001;
-    if (up) value |= 0x0100;
-    // The exclusive-or that turns the counter pair into a direction.
-    if (down) value ^= 0x0002;
-    if (up) value ^= 0x0200;
-    joy_dat_[port] = value;
-    joy_fire_[port] = fire;
 
-    // Fire buttons appear as active-low bits in CIA-A port A.
+    // JOYxDAT holds two quadrature counters, and a digital joystick presents
+    // itself as particular bit patterns within them. Games decode it as:
+    //
+    //     right = bit 1            left = bit 9
+    //     down  = bit 1 xor bit 0  up   = bit 9 xor bit 8
+    //
+    // so the pairs run 00 neutral, 11 right/left, 01 down/up, 10 both.
+    const unsigned bit1 = right ? 1u : 0u;
+    const unsigned bit0 = down ? (bit1 ^ 1u) : bit1;
+    const unsigned bit9 = left ? 1u : 0u;
+    const unsigned bit8 = up ? (bit9 ^ 1u) : bit9;
+
+    joy_dat_[port] = static_cast<u16>((bit9 << 9) | (bit8 << 8) | (bit1 << 1) | bit0);
+    joy_fire_[port] = fire;
+    refresh_fire_buttons();
+}
+
+void Chipset::set_mouse(int dx, int dy, bool left_button, bool right_button) {
+    // The mouse is on port 0, and JOY0DAT is a pair of free-running 8-bit
+    // counters rather than a position. A game reads it every frame and takes
+    // the difference, so movement has to accumulate and wrap.
+    mouse_x_ = static_cast<u8>(mouse_x_ + dx);
+    mouse_y_ = static_cast<u8>(mouse_y_ + dy);
+    joy_dat_[0] = static_cast<u16>((static_cast<u16>(mouse_y_) << 8) | mouse_x_);
+
+    joy_fire_[0] = left_button;
+    mouse_right_ = right_button;
+    refresh_fire_buttons();
+}
+
+// The fire buttons and the left mouse button share CIA-A port A, active low.
+void Chipset::refresh_fire_buttons() {
     u8 pra = 0xff;
     if (joy_fire_[0]) pra = static_cast<u8>(pra & ~0x40);
     if (joy_fire_[1]) pra = static_cast<u8>(pra & ~0x80);

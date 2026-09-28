@@ -583,10 +583,76 @@ TEST_CASE("the fire buttons appear in cia-a port a, active low") {
     CHECK_EQ(pra & 0x80u, 0x80u);       // port 1 is not pressed
 }
 
-TEST_CASE("joystick directions reach joydat") {
+// A digital joystick presents itself through two quadrature counters, and a
+// game decodes it as right = bit 1, down = bit 1 xor bit 0, left = bit 9,
+// up = bit 9 xor bit 8. Encoding it any other way makes a press for one
+// direction read as another, which is invisible until a real game ignores you.
+namespace {
+
+struct Direction {
+    bool up, down, left, right;
+};
+
+// The decode every game performs, written out here independently.
+Direction decode_joydat(u16 value) {
+    const bool bit0 = (value & 0x0001) != 0;
+    const bool bit1 = (value & 0x0002) != 0;
+    const bool bit8 = (value & 0x0100) != 0;
+    const bool bit9 = (value & 0x0200) != 0;
+    return {bit9 != bit8, bit1 != bit0, bit9, bit1};
+}
+
+} // namespace
+
+TEST_CASE("every joystick direction decodes back to itself") {
     Machine m;
-    m.chipset.set_joystick(1, false, false, true, false, false);
-    CHECK_EQ(m.peek(reg::JOY1DAT) & 0x0200u, 0x0200u);   // left
+    struct Case { bool up, down, left, right; const char* name; };
+    const Case cases[] = {
+        {false, false, false, false, "neutral"},
+        {true,  false, false, false, "up"},
+        {false, true,  false, false, "down"},
+        {false, false, true,  false, "left"},
+        {false, false, false, true,  "right"},
+        {true,  false, true,  false, "up-left"},
+        {true,  false, false, true,  "up-right"},
+        {false, true,  true,  false, "down-left"},
+        {false, true,  false, true,  "down-right"},
+    };
+    for (const Case& c : cases) {
+        m.chipset.set_joystick(1, c.up, c.down, c.left, c.right, false);
+        const Direction got = decode_joydat(m.peek(reg::JOY1DAT));
+        if (got.up != c.up || got.down != c.down || got.left != c.left ||
+            got.right != c.right) {
+            report_failure(__FILE__, __LINE__,
+                           std::string("joystick ") + c.name + " decoded wrong");
+        }
+    }
+}
+
+TEST_CASE("the mouse is a pair of counters, not a position") {
+    Machine m;
+    // A game reads JOY0DAT every frame and takes the difference, so movement
+    // has to accumulate rather than replace.
+    m.chipset.set_mouse(3, 5, false, false);
+    CHECK_EQ(m.peek(reg::JOY0DAT) & 0xffu, 3u);
+    CHECK_EQ((m.peek(reg::JOY0DAT) >> 8) & 0xffu, 5u);
+
+    m.chipset.set_mouse(4, 2, false, false);
+    CHECK_EQ(m.peek(reg::JOY0DAT) & 0xffu, 7u);
+    CHECK_EQ((m.peek(reg::JOY0DAT) >> 8) & 0xffu, 7u);
+
+    // And the counters wrap, which is what the delta arithmetic expects.
+    m.chipset.set_mouse(-8, 0, false, false);
+    CHECK_EQ(m.peek(reg::JOY0DAT) & 0xffu, 0xffu);
+}
+
+TEST_CASE("mouse buttons land where a game looks for them") {
+    Machine m;
+    m.chipset.set_mouse(0, 0, true, false);
+    CHECK_EQ(m.memory.read8(0x00bfe001) & 0x40u, 0u);       // left: CIA-A PRA bit 6
+    m.chipset.set_mouse(0, 0, false, true);
+    CHECK_EQ(m.memory.read8(0x00bfe001) & 0x40u, 0x40u);
+    CHECK_EQ(m.peek(reg::POTGOR) & 0x0400u, 0u);        // right: POTGOR bit 10
 }
 
 // ---------------------------------------------------------------------------

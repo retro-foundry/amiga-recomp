@@ -158,13 +158,31 @@ public:
                 }
                 break;
             }
+            case SDL_MOUSEMOTION:
+                // Accumulated and handed over below, because several motion
+                // events can arrive between frames.
+                mouse_dx_ += event.motion.xrel;
+                mouse_dy_ += event.motion.yrel;
+                break;
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP: {
+                const bool down = event.type == SDL_MOUSEBUTTONDOWN;
+                if (event.button.button == SDL_BUTTON_LEFT) mouse_left_ = down;
+                if (event.button.button == SDL_BUTTON_RIGHT) mouse_right_ = down;
+                break;
+            }
             default:
                 break;
             }
         }
 
-        // Port 1 is where a game looks for a joystick; port 0 is the mouse.
+        // Port 1 is where a game looks for a joystick; port 0 is the mouse,
+        // and plenty of games use it for their menus even when the game
+        // itself is played on a stick.
         chipset.set_joystick(1, up_, down_, left_, right_, fire_);
+        chipset.set_mouse(mouse_dx_, mouse_dy_, mouse_left_, mouse_right_);
+        mouse_dx_ = 0;
+        mouse_dy_ = 0;
         return !quit_;
     }
 
@@ -189,6 +207,8 @@ private:
     bool fullscreen_ = false;
     bool quit_ = false;
     bool up_ = false, down_ = false, left_ = false, right_ = false, fire_ = false;
+    int mouse_dx_ = 0, mouse_dy_ = 0;
+    bool mouse_left_ = false, mouse_right_ = false;
 };
 
 #endif // ARECOMP_WITH_SDL

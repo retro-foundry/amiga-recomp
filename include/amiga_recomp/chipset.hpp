@@ -151,6 +151,10 @@ public:
     // CIA-A PRA (AMIGA.md, input).
     void set_joystick(unsigned port, bool up, bool down, bool left, bool right,
                       bool fire);
+    // Relative mouse movement and buttons. Port 0 is where the mouse lives,
+    // and a game reads JOY0DAT as a pair of counters rather than as
+    // directions, so movement has to accumulate.
+    void set_mouse(int dx, int dy, bool left_button, bool right_button);
     void set_key(u8 raw_code, bool pressed);
 
     // --- widescreen ------------------------------------------------------
@@ -395,6 +399,9 @@ private:
     // Input.
     u16 joy_dat_[2] = {0, 0};
     bool joy_fire_[2] = {false, false};
+    u8 mouse_x_ = 0, mouse_y_ = 0;      // the port 0 quadrature counters
+    bool mouse_right_ = false;
+    void refresh_fire_buttons();
 
     Framebuffer frame_;
     std::function<void(const Framebuffer&)> on_frame_;
