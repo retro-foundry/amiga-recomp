@@ -104,6 +104,9 @@ in before the port started or during play:
 | Right stick | Mouse pointer on port 0 |
 | Left shoulder, left trigger | Left mouse button |
 
+Host keys also reach the Amiga keyboard itself, as raw key codes through
+CIA-A's serial register, for the games that read it rather than a joystick.
+
 Keyboard and gamepad feed the same port rather than one each, so either can
 be picked up mid-game and holding both is not a conflict. The right stick is
 mapped to the mouse because a game whose menu wants a pointer would otherwise

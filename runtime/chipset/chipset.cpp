@@ -564,12 +564,30 @@ void Chipset::refresh_fire_buttons() {
 }
 
 void Chipset::set_key(u8 raw_code, bool pressed) {
-    // The keyboard arrives as a serial stream into CIA-A. Games read the raw
-    // code from SDR and acknowledge with a handshake; raising PORTS is enough
-    // for the handler to run.
-    cia_a_.icr_data = static_cast<u8>(cia_a_.icr_data | 0x08);
-    (void)raw_code;
-    (void)pressed;
+    // The keyboard arrives as a serial stream into CIA-A. One byte carries
+    // the code and an up/down flag, rotated left by one and inverted, because
+    // every handler reads SDR and undoes exactly that:
+    //
+    //     move.b  ciaasdr,d0
+    //     not.b   d0
+    //     ror.b   #1,d0          ; bit 7 set means the key was released
+    //
+    // so the code has to survive that sequence and come back out intact.
+    const u8 flagged =
+        static_cast<u8>((raw_code & 0x7f) | (pressed ? 0x00 : 0x80));
+    const u8 rotated = static_cast<u8>((flagged << 1) | (flagged >> 7));
+    key_queue_.push_back(static_cast<u8>(~rotated));
+    deliver_next_key();
+}
+
+void Chipset::deliver_next_key() {
+    // Only one code fits in the serial register. Handing over a second before
+    // the game has read the first would lose a keypress, so the queue waits.
+    if (key_in_flight_ || key_queue_.empty()) return;
+    kbd_sdr_ = key_queue_.front();
+    key_queue_.erase(key_queue_.begin());
+    key_in_flight_ = true;
+    cia_a_.icr_data = static_cast<u8>(cia_a_.icr_data | 0x08);   // ICR_SP
     if (cia_a_.icr_mask & 0x08) raise_interrupt(INTF_PORTS);
 }
 

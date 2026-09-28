@@ -53,7 +53,16 @@ u8 Chipset::cia_read(Cia& cia, u32 index, bool is_a) {
     case CIA_TODLOW: return static_cast<u8>(cia.tod);
     case CIA_TODMID: return static_cast<u8>(cia.tod >> 8);
     case CIA_TODHI: return static_cast<u8>(cia.tod >> 16);
-    case CIA_SDR: return 0;
+    case CIA_SDR: {
+        // CIA-B's serial register is not the keyboard.
+        if (!is_a) return 0;
+        // Reading the code is what frees the register, so the next key can
+        // come through and raise its own interrupt.
+        const u8 value = kbd_sdr_;
+        key_in_flight_ = false;
+        deliver_next_key();
+        return value;
+    }
     case CIA_ICR: {
         // Reading the interrupt control register returns the pending sources
         // and clears them, which is how the handler acknowledges.

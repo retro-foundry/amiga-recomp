@@ -705,3 +705,59 @@ TEST_CASE("loading rubbish as chipset state is refused, not half applied") {
 }
 
 ARECOMP_TEST_MAIN()
+
+// A game reads the keyboard by taking CIA-A's serial register, complementing
+// it and rotating right: the low seven bits are the raw key code and bit 7
+// says the key was released. Anything else in SDR is a different key.
+namespace {
+
+// The decode every keyboard handler performs, written out independently.
+struct KeyEvent {
+    u8 code;
+    bool released;
+};
+
+KeyEvent decode_sdr(u8 sdr) {
+    const u8 complemented = static_cast<u8>(~sdr);
+    const u8 rotated =
+        static_cast<u8>((complemented >> 1) | (complemented << 7));
+    return {static_cast<u8>(rotated & 0x7f), (rotated & 0x80) != 0};
+}
+
+} // namespace
+
+TEST_CASE("a key press and release decode back to the same code") {
+    Machine m;
+    for (u8 code : {u8(0x20), u8(0x40), u8(0x44), u8(0x00), u8(0x7f)}) {
+        m.chipset.set_key(code, true);
+        KeyEvent got = decode_sdr(m.memory.read8(0x00bfec01));
+        if (got.code != code || got.released)
+            report_failure(__FILE__, __LINE__, "key press decoded wrong");
+
+        m.chipset.set_key(code, false);
+        got = decode_sdr(m.memory.read8(0x00bfec01));
+        if (got.code != code || !got.released)
+            report_failure(__FILE__, __LINE__, "key release decoded wrong");
+    }
+}
+
+TEST_CASE("keys typed faster than they are read are queued, not lost") {
+    Machine m;
+    // The serial register holds one code, so a burst has to wait its turn.
+    m.chipset.set_key(0x20, true);   // A
+    m.chipset.set_key(0x21, true);   // S
+    m.chipset.set_key(0x22, true);   // D
+
+    CHECK_EQ(decode_sdr(m.memory.read8(0x00bfec01)).code, 0x20u);
+    CHECK_EQ(decode_sdr(m.memory.read8(0x00bfec01)).code, 0x21u);
+    CHECK_EQ(decode_sdr(m.memory.read8(0x00bfec01)).code, 0x22u);
+}
+
+TEST_CASE("a key raises the ports interrupt when it is enabled") {
+    Machine m;
+    m.poke(reg::INTENA, 0x8000 | INTF_INTEN | INTF_PORTS);
+    m.memory.write8(0x00bfed01, 0x80 | 0x08);   // CIA-A ICR: enable SP
+
+    m.chipset.set_key(0x40, true);              // space
+    CHECK_EQ(m.peek(reg::INTREQR) & INTF_PORTS, INTF_PORTS);
+}

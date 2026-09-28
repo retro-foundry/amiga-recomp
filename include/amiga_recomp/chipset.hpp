@@ -363,6 +363,14 @@ private:
     };
     Cia cia_a_{};
     Cia cia_b_{};
+
+    // Keyboard. The serial register holds one code at a time, so the rest
+    // queue behind it until the game reads what is there.
+    std::vector<u8> key_queue_;
+    u8 kbd_sdr_ = 0;
+    bool key_in_flight_ = false;
+    void deliver_next_key();
+
     u8 cia_read(Cia& cia, u32 reg, bool is_a);
     void cia_write(Cia& cia, u32 reg, u8 value, bool is_a);
 
