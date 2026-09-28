@@ -44,13 +44,35 @@ OFF), `ARECOMP_BUILD_TESTS` (default ON).
 
 ```sh
 # translate a guest image into a native project
-build/tools/arecomp/arecomp recompile ports/example/example.toml -o projects/example
+build/bin/arecomp recompile ports/copper-demo.toml -o projects/copper-demo
 
 # build and run the generated port
-cmake -S projects/example -B projects/example/build -G Ninja
-cmake --build projects/example/build
-projects/example/build/example
+cmake -S projects/copper-demo -B projects/copper-demo/build -G Ninja
+cmake --build projects/copper-demo/build
+projects/copper-demo/build/copper-demo     testroms/synthetic/copper_demo.bin frame.ppm
 ```
+
+`arecomp analyze <manifest>` reports what discovery found and what it could
+not resolve, without emitting anything.
+
+## Status
+
+Working, with synthetic programs rather than a real game:
+
+- **CPU**: the full MC68000 user instruction set and every addressing mode,
+  decoded, translated and differentially tested against a reference
+  interpreter, with absolute results pinned to the Motorola manual.
+- **Chipset**: Copper, bitplane display, blitter, sprites, CIA timers, Paula
+  DMA and the interrupt controller, driven by one master clock.
+- **Widescreen**: level 1 window extension, working and tested.
+  See [docs/widescreen.md](docs/widescreen.md) for what it can and cannot do.
+- **Demonstration**: `ports/copper-demo.toml` is 68000 code that programs the
+  custom chips, recompiled to native code. It runs 9,500 blocks with **zero
+  interpreter fallbacks** and renders a correct raster.
+
+Not done: an SDL backend (the runtime renders to a framebuffer; only a PPM
+writer consumes it), a host audio mixer, the ADF/disk path, an OS shim, and
+a real game. See [PLAN.md](PLAN.md).
 
 Generated ports are written to `projects/`, which is git-ignored. **No game
 data, Kickstart ROM or commercial binary belongs in this repository.** You must
