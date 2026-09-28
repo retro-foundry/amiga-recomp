@@ -4,9 +4,12 @@ function(arecomp_add_test name)
   target_include_directories(${name} PRIVATE
     ${CMAKE_SOURCE_DIR}/tests
     ${CMAKE_SOURCE_DIR}/tools/arecomp/src)
+  target_compile_definitions(${name} PRIVATE
+    ARECOMP_TESTROM_DIR="${CMAKE_SOURCE_DIR}/testroms/synthetic")
   add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
 arecomp_add_test(test_decoder cpu/decoder_test.cpp)
 arecomp_add_test(test_semantics cpu/semantics_test.cpp)
 arecomp_add_test(test_memory memory/guest_memory_test.cpp)
+arecomp_add_test(test_interpreter integration/interpreter_test.cpp)

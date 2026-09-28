@@ -146,6 +146,13 @@ public:
 
     void note_unknown_target(GuestAddr address);
 
+    // The guest address of the instruction currently executing. Translated
+    // code records this before an access that can fault, so a bus or address
+    // error can report the offending opcode in its exception frame. It is a
+    // single store, and only on instructions that touch memory.
+    void set_insn_pc(u32 pc) noexcept { insn_pc_ = pc; }
+    [[nodiscard]] u32 insn_pc() const noexcept { return insn_pc_; }
+
     // Wired up only when the interpreter fallback is compiled in.
     using InterpretFn = u32 (*)(M68kState&, Runtime&);
     void set_interpreter(InterpretFn fn) noexcept { interpreter_ = fn; }
@@ -167,6 +174,7 @@ private:
 
     u8 pending_level_ = 0;
     MasterTick hardware_deadline_ = 0;
+    u32 insn_pc_ = 0;
 
     friend class Chipset;
 };

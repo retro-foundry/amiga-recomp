@@ -79,9 +79,14 @@ u32 Runtime::enter_group0_fault(M68kState& cpu, const GuestFault& fault, u32 pc)
     if (!fault.instruction) status |= 1u << 3;   // I/N: 0 = instruction, 1 = not
     if (fault.read) status |= 1u << 4;           // R/W: 1 = read
 
+    // The instruction register field: the fault itself may not know the
+    // opcode, but the runtime knows which instruction was executing. peek16
+    // is used so that recovering it can never fault a second time.
+    const u16 opcode = fault.opcode ? fault.opcode : memory_.peek16(insn_pc_);
+
     push32(cpu, pc);
     push16(cpu, old_sr);
-    push16(cpu, fault.opcode);
+    push16(cpu, opcode);
     push32(cpu, fault.address);
     push16(cpu, status);
 
