@@ -169,6 +169,7 @@ void GuestMemory::write8(u32 addr, u8 value) {
         if (!(p.perms & PERM_W)) return;   // ROM write: ignored, as on hardware
         p.host[a & kPageMask] = value;
         note_code_write(a);
+        note_write(a, value, 1);
         return;
     }
     if (p.device) {
@@ -186,6 +187,7 @@ void GuestMemory::write16(u32 addr, u16 value) {
         if (!(p.perms & PERM_W)) return;
         put_be16(p.host + (a & kPageMask), value);
         note_code_write(a);
+        note_write(a, value, 2);
         return;
     }
     if (p.device) {
@@ -201,7 +203,8 @@ void GuestMemory::write32(u32 addr, u32 value) {
     Page& p = page_of(a);
     if (p.host && (p.perms & PERM_W) && (a & kPageMask) <= kPageSize - 4) {
         put_be32(p.host + (a & kPageMask), value);
-        note_code_write(a);
+        note_code_write(a, 4);
+        note_write(a, value, 4);
         return;
     }
     write16(a, static_cast<u16>(value >> 16));
@@ -223,11 +226,20 @@ u32 GuestMemory::peek32(u32 addr) const noexcept {
 
 void GuestMemory::poke8(u32 addr, u8 value) noexcept {
     if (u8* p = host_ptr(addr)) *p = value;
+    // DMA counts as a write over code. A trackloader reading an overlay into
+    // Chip RAM, or a blitter clearing a buffer that used to hold code, must
+    // retire the translations there just as a CPU store does.
+    note_code_write(addr & address_mask_);
+    note_write(addr & address_mask_, value, 1);
 }
 
 void GuestMemory::poke16(u32 addr, u16 value) noexcept {
-    poke8(addr, static_cast<u8>(value >> 8));
-    poke8(addr + 1, static_cast<u8>(value));
+    // Stored a byte at a time because the two halves can land on different
+    // pages, which are not necessarily adjacent in the host.
+    if (u8* p = host_ptr(addr)) *p = static_cast<u8>(value >> 8);
+    if (u8* p = host_ptr(addr + 1)) *p = static_cast<u8>(value);
+    note_code_write(addr & address_mask_, 2);
+    note_write(addr & address_mask_, value, 2);
 }
 
 } // namespace arecomp

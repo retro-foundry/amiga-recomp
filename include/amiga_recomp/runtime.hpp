@@ -63,6 +63,11 @@ struct RuntimeConfig {
     // comparing is how a translation bug is caught on real game code rather
     // than on a synthetic test (AMIGA_RECOMP.md 28.3, 46).
     bool force_interpreter = false;
+    // Print a running digest of guest state at block boundaries, every N
+    // blocks. Running a port once compiled and once interpreted and diffing
+    // the two streams finds the first block where a translation diverges,
+    // which is otherwise a needle in tens of millions of blocks. Zero is off.
+    u64 digest_interval = 0;
 };
 
 // Statistics a port needs in order to claim zero interpreter fallback.
@@ -194,6 +199,8 @@ private:
     RuntimeConfig config_;
     BlockTable blocks_;
     HookRegistry hooks_;
+    u64 digest_ = 0xcbf29ce484222325ull;
+    u64 digest_blocks_ = 0;
     HardwareModel* hardware_ = nullptr;
     RuntimeStats stats_;
     InterpretFn interpreter_ = nullptr;

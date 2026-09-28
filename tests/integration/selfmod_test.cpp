@@ -158,3 +158,66 @@ TEST_CASE("rom pages are never reported: a write there does nothing") {
 }
 
 ARECOMP_TEST_MAIN()
+
+// A game that patches a pair of adjacent one-instruction blocks does it with a
+// single move.l. If only the block at the written address is retired, the
+// second keeps running a translation of the instruction that used to be there.
+// That is how Vroom's bitplane conversion ran half its shifts as the NOPs the
+// capture held, and drew its title screen in four colours instead of sixteen.
+namespace {
+
+u32 block_first(M68kState& cpu, Runtime&) {
+    cpu.d[0] = 1;
+    return 0x00002002;
+}
+u32 block_second(M68kState& cpu, Runtime&) {
+    cpu.d[1] = 1;
+    return 0x00002004;
+}
+
+const BlockEntry kAdjacent[] = {
+    {0x00002000, &block_first, 2},
+    {0x00002002, &block_second, 2},
+};
+
+} // namespace
+
+TEST_CASE("a long write retires both blocks it covers, not just the first") {
+    Machine m;
+    m.runtime.blocks().build(kAdjacent, 2);
+    m.runtime.watch_translated_code();
+
+    // One move.l over two one-instruction blocks.
+    m.memory.write32(0x00002000, 0x86478885u);
+
+    CHECK(m.runtime.blocks().find(0x00002000) == nullptr);
+    CHECK(m.runtime.blocks().find(0x00002002) == nullptr);
+    CHECK_EQ(m.runtime.invalidated_blocks(), 2u);
+}
+
+TEST_CASE("a long write that lands on a block's tail still retires it") {
+    // The write starts in one block and runs into the next, which is the
+    // ordinary case once blocks are longer than a single instruction.
+    Machine m;
+    m.runtime.blocks().build(kAdjacent, 2);
+    m.runtime.watch_translated_code();
+
+    m.memory.write32(0x00001ffe, 0x4e714e71u);
+
+    CHECK(m.runtime.blocks().find(0x00002000) == nullptr);
+    CHECK(m.runtime.blocks().find(0x00002002) != nullptr);
+}
+
+TEST_CASE("dma over translated code retires it too") {
+    // Disk and blitter transfers go straight to memory rather than through a
+    // CPU store, but a trackloader dropping an overlay on top of old code is
+    // the very case section 32 exists for.
+    Machine m;
+    m.runtime.blocks().build(kBlocks, 3);
+    m.runtime.watch_translated_code();
+
+    m.memory.poke16(0x00001010, 0x4e71);
+
+    CHECK(m.runtime.blocks().find(0x00001000) == nullptr);
+    CHECK(m.runtime.blocks().find(0x00001100) != nullptr);
+}

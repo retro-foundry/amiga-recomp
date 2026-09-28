@@ -56,6 +56,29 @@ statically generated code.
 Compare against the reference: same input replay, same frames, same audio,
 same final state. `tests/differential/` shows the pattern.
 
+The port carries its own reference inside it. `ARECOMP_INTERPRET=1` runs the
+guest through the interpreter instead of the compiled blocks, and the two must
+produce identical state. When they do not, `ARECOMP_DIGEST=N` prints a running
+digest of guest registers every N blocks, sampled only where a compiled block
+begins so that both engines sample the same points:
+
+```sh
+ARECOMP_DIGEST=1000 projects/<id>/build/<id> <image> a.ppm 60000000 2> a.log
+ARECOMP_INTERPRET=1 ARECOMP_DIGEST=1000 projects/<id>/build/<id> <image> b.ppm 60000000 2> b.log
+diff <(grep digest a.log) <(grep digest b.log) | head
+```
+
+The first differing line names the block after which they parted company.
+Narrow it with `ARECOMP_DIGEST=1` over that window and you have the exact
+block to look at. This is how the bug that drew Vroom's title screen in four
+colours instead of sixteen was found: it came down to a single `move.l` that
+patched two adjacent one-instruction blocks, only the first of which was being
+retired.
+
+`Runtime::memory().set_write_watch()` answers the other half of the question --
+which code filled this buffer, and why did it stop -- by reporting every guest
+write into an address range, DMA included.
+
 ## 6a. Play it
 
 Build the port with the SDL backend and it opens a window:

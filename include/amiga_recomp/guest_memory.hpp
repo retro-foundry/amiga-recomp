@@ -135,6 +135,26 @@ public:
         return page < code_page_.size() && code_page_[page] != 0;
     }
 
+    // --- write watchpoint (bring-up only) --------------------------------
+    // Reports guest writes into an address range. There is no other way to
+    // answer "which code filled this buffer, and why did it stop", which is
+    // the question every half-loaded screen and half-decrunched level asks.
+    //
+    // The check is a pair of comparisons against a range that is empty unless
+    // a watch is set, so an unwatched build pays for one predictable branch.
+    using WatchFn = void (*)(void* context, u32 address, u32 value, unsigned size);
+    void set_write_watch(u32 first, u32 last, WatchFn fn, void* context) {
+        watch_first_ = first;
+        watch_last_ = last;
+        watch_ = fn;
+        watch_context_ = context;
+    }
+    void clear_write_watch() {
+        watch_ = nullptr;
+        watch_first_ = 1;
+        watch_last_ = 0;
+    }
+
     struct RegionInfo {
         u32 start = 0;
         u32 size = 0;
@@ -173,11 +193,31 @@ private:
     void* code_write_context_ = nullptr;
 
     // Called after a write that landed on a page holding translated code.
-    void note_code_write(u32 address) {
-        const std::size_t page = (address & address_mask_) >> kPageBits;
-        if (page >= code_page_.size() || code_page_[page] == 0) return;
-        code_page_[page] = 0;              // report each page once
-        if (code_write_) code_write_(code_write_context_, address);
+    //
+    // Every word the write covers is reported separately, because a write
+    // wider than one word can straddle two translated blocks. Retiring only
+    // the block at the first address leaves the second running a translation
+    // of the instruction that used to be there, which is exactly how a game
+    // that patches a pair of adjacent instructions with one move.l ends up
+    // half-executing its old code.
+    void note_code_write(u32 address, u32 size = 1) {
+        for (u32 offset = 0; offset < size; offset += 2) {
+            const u32 at = (address + offset) & address_mask_;
+            const std::size_t page = at >> kPageBits;
+            if (page >= code_page_.size() || code_page_[page] == 0) continue;
+            code_page_[page] = 0;          // report each page once
+            if (code_write_) code_write_(code_write_context_, at);
+        }
+    }
+
+    WatchFn watch_ = nullptr;
+    void* watch_context_ = nullptr;
+    u32 watch_first_ = 1;                  // empty range: first > last
+    u32 watch_last_ = 0;
+
+    void note_write(u32 address, u32 value, unsigned size) {
+        if (address < watch_first_ || address > watch_last_) return;
+        if (watch_) watch_(watch_context_, address, value, size);
     }
 };
 

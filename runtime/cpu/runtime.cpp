@@ -277,6 +277,25 @@ void Runtime::step_block(M68kState& cpu) {
     const GuestAddr pc = cpu.pc;
     if (!config_.force_interpreter && blocks_.find(pc)) last_block_ = pc;
 
+    // Divergence hunting. The digest is taken only where a compiled block
+    // starts, so the compiled run and the interpreted run sample the same
+    // points even though the interpreter steps one instruction at a time.
+    if (config_.digest_interval != 0 && blocks_.find(pc)) {
+        u64 h = digest_;
+        const auto mix = [&h](u32 value) {
+            h = (h ^ value) * 0x100000001b3ull;
+        };
+        mix(pc);
+        for (unsigned i = 0; i < 8; ++i) mix(cpu.d[i]);
+        for (unsigned i = 0; i < 8; ++i) mix(cpu.a[i]);
+        mix(cpu.sr());
+        digest_ = h;
+        if (++digest_blocks_ % config_.digest_interval == 0)
+            log("[digest] %llu %016llx pc=%08x",
+                (unsigned long long)digest_blocks_, (unsigned long long)digest_,
+                pc);
+    }
+
     if (config_.trace_blocks)
         log("[block] %08x d0=%08x a7=%08x sr=%04x", pc, cpu.d[0], cpu.a[7], cpu.sr());
 
