@@ -27,12 +27,18 @@ cmake-build-*/
 *.lha
 *.lzx
 *.adf
+*.crdownload
+*.part
 *.ipf
 *.hdf
 *.rom
 *.uss
 *.snapshot
 capture/
+
+# Python bytecode
+__pycache__/
+*.pyc
 
 # Editor / OS
 .vscode/
