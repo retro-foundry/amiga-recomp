@@ -983,9 +983,15 @@ bool CodeGenerator::emit(const std::string& out_dir, std::string& error) {
               << "namespace arecomp::generated {\n\n"
               << "namespace {\n"
               << "const BlockEntry kBlocks[] = {\n";
-        for (u32 address : addresses)
-            table << "    {" << hex(address) << ", &" << block_symbol(address) << "},\n";
-        if (addresses.empty()) table << "    {0u, nullptr},\n";
+        for (u32 address : addresses) {
+            // The byte range this block was translated from, so the runtime can
+            // retire exactly the blocks a guest write invalidates rather than
+            // everything sharing a page with them.
+            const BasicBlock& block = analysis_.blocks.at(address);
+            table << "    {" << hex(address) << ", &" << block_symbol(address)
+                  << ", " << (block.end - block.start) << "},\n";
+        }
+        if (addresses.empty()) table << "    {0u, nullptr, 0u},\n";
         table << "};\n"
               << "} // namespace\n\n"
               << "void install_blocks(BlockTable& table) {\n"

@@ -34,10 +34,12 @@ u32 block_far(M68kState& cpu, Runtime&) {
     return 0x4000;
 }
 
+// address, function, and the number of guest bytes the block was translated
+// from. The length is what makes invalidation precise.
 const BlockEntry kBlocks[] = {
-    {0x00001000, &block_a},
-    {0x00001100, &block_b},
-    {0x00008000, &block_far},
+    {0x00001000, &block_a, 0x40},
+    {0x00001100, &block_b, 0x40},
+    {0x00008000, &block_far, 0x40},
 };
 
 } // namespace
@@ -50,13 +52,41 @@ TEST_CASE("a translated block is used until its code is overwritten") {
     CHECK(m.runtime.blocks().find(0x00001000) != nullptr);
     CHECK(m.runtime.blocks().find(0x00001100) != nullptr);
 
-    // A write to the page those blocks came from retires them.
-    m.memory.write16(0x00001080, 0x4e71);
+    // Writing inside the first block's own bytes retires that block.
+    m.memory.write16(0x00001010, 0x4e71);
 
     CHECK(m.runtime.blocks().find(0x00001000) == nullptr);
+    // The second block shares the page but not the bytes, so it survives.
+    CHECK(m.runtime.blocks().find(0x00001100) != nullptr);
+    CHECK_EQ(m.runtime.stats().code_overwrites, 1u);
+    CHECK_EQ(m.runtime.invalidated_blocks(), 1u);
+}
+
+TEST_CASE("a write between blocks retires neither") {
+    // The case that makes page granularity useless in practice: a game
+    // storing to a variable that happens to sit near its code.
+    Machine m;
+    m.runtime.blocks().build(kBlocks, 3);
+    m.runtime.watch_translated_code();
+
+    m.memory.write16(0x00001080, 0xdead);   // past block a, before block b
+
+    CHECK(m.runtime.blocks().find(0x00001000) != nullptr);
+    CHECK(m.runtime.blocks().find(0x00001100) != nullptr);
+    CHECK_EQ(m.runtime.stats().code_overwrites, 0u);
+}
+
+TEST_CASE("a page stays watched after a write that hit nothing") {
+    // Clearing the page flag on a harmless store would blind the runtime to a
+    // real overwrite later.
+    Machine m;
+    m.runtime.blocks().build(kBlocks, 3);
+    m.runtime.watch_translated_code();
+
+    m.memory.write16(0x00001080, 0xdead);        // misses every block
+    m.memory.write16(0x00001104, 0x4e71);        // now inside block b
     CHECK(m.runtime.blocks().find(0x00001100) == nullptr);
     CHECK_EQ(m.runtime.stats().code_overwrites, 1u);
-    CHECK_EQ(m.runtime.invalidated_blocks(), 2u);
 }
 
 TEST_CASE("blocks on other pages are left alone") {
@@ -64,10 +94,10 @@ TEST_CASE("blocks on other pages are left alone") {
     m.runtime.blocks().build(kBlocks, 3);
     m.runtime.watch_translated_code();
 
-    m.memory.write16(0x00001080, 0x4e71);
+    m.memory.write16(0x00001010, 0x4e71);
     // $8000 is a different page and was not written.
     CHECK(m.runtime.blocks().find(0x00008000) != nullptr);
-    CHECK_EQ(m.runtime.invalidated_blocks(), 2u);
+    CHECK_EQ(m.runtime.invalidated_blocks(), 1u);
 }
 
 TEST_CASE("writing somewhere with no translated code costs nothing") {
@@ -85,8 +115,11 @@ TEST_CASE("a page is reported once, however many times it is written") {
     m.runtime.blocks().build(kBlocks, 3);
     m.runtime.watch_translated_code();
 
-    for (int i = 0; i < 50; ++i) m.memory.write8(0x00001200 + i, 0xff);
+    for (int i = 0; i < 50; ++i) m.memory.write8(0x00001000 + i, 0xff);
+    // The block goes on the first write that lands in it; later writes find
+    // nothing left to retire.
     CHECK_EQ(m.runtime.stats().code_overwrites, 1u);
+    CHECK_EQ(m.runtime.invalidated_blocks(), 1u);
 }
 
 TEST_CASE("execution falls back to the interpreter after an overwrite") {
@@ -101,8 +134,8 @@ TEST_CASE("execution falls back to the interpreter after an overwrite") {
     m.runtime.step_block(m.cpu);
     CHECK_EQ(m.cpu.d[0], 0xaaaaaaaau);
 
-    // The guest rewrites that page; now the real instruction runs instead.
-    m.memory.write16(0x00001400, 0x4e71);
+    // The guest rewrites those very bytes; now the real instruction runs.
+    m.memory.write16(0x00001004, 0x4e71);
     m.cpu.d[0] = 0;
     m.cpu.pc = 0x1000;
     m.runtime.step_block(m.cpu);
@@ -115,7 +148,7 @@ TEST_CASE("rom pages are never reported: a write there does nothing") {
     Machine m;
     std::vector<u8> contents(GuestMemory::kPageSize, 0x4e);
     m.memory.add_rom(0x00f80000, contents, "rom");
-    const BlockEntry rom_block[] = {{0x00f80000, &block_a}};
+    const BlockEntry rom_block[] = {{0x00f80000, &block_a, 0x40}};
     m.runtime.blocks().build(rom_block, 1);
     m.runtime.watch_translated_code();
 

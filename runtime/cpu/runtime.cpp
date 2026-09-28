@@ -166,15 +166,21 @@ u32 Runtime::enter_pending_interrupt(M68kState& cpu, u32 next_pc) {
 
 namespace {
 struct PageIndexBuilder {
-    std::unordered_map<u32, std::vector<GuestAddr>>* index;
+    std::unordered_map<u32, std::vector<Runtime::CodeBlockRange>>* index;
     GuestMemory* memory;
 };
 
-void index_block(void* context, GuestAddr address) {
+void index_block(void* context, GuestAddr address, u32 length) {
     auto* builder = static_cast<PageIndexBuilder*>(context);
-    const u32 page = address >> GuestMemory::kPageBits;
-    (*builder->index)[page].push_back(address);
-    builder->memory->mark_code_page(address);
+    if (length == 0) length = 2;   // at least one instruction
+    // A block can straddle a page boundary, so record it on every page it
+    // covers; a write to any of them retires it.
+    const u32 last = address + length - 1;
+    for (u32 page = address >> GuestMemory::kPageBits;
+         page <= (last >> GuestMemory::kPageBits); ++page) {
+        (*builder->index)[page].push_back({address, last});
+        builder->memory->mark_code_page(page << GuestMemory::kPageBits);
+    }
 }
 
 void on_code_write(void* context, u32 address) {
@@ -190,17 +196,46 @@ void Runtime::watch_translated_code() {
 }
 
 void Runtime::invalidate_code_at(u32 address) {
-    const u32 page = (address & address_mask()) >> GuestMemory::kPageBits;
+    const u32 masked = address & address_mask();
+    const u32 page = masked >> GuestMemory::kPageBits;
     auto it = blocks_by_page_.find(page);
     if (it == blocks_by_page_.end()) return;
-    for (GuestAddr block : it->second) blocks_.invalidate(block);
+
+    // Only the blocks whose own bytes were written. A game storing to a
+    // variable that happens to share a page with code should not lose the
+    // code: page granularity would retire hundreds of blocks for one store.
+    std::size_t dropped = 0;
+    std::vector<CodeBlockRange> survivors;
+    survivors.reserve(it->second.size());
+    for (const CodeBlockRange& block : it->second) {
+        if (masked >= block.first && masked <= block.last) {
+            blocks_.invalidate(block.first);
+            ++dropped;
+        } else {
+            survivors.push_back(block);
+        }
+    }
+
+    if (dropped == 0) {
+        // Nothing of ours was hit. Re-arm the page so the next write is
+        // checked too, otherwise one harmless store would blind us to a real
+        // overwrite later.
+        memory_.mark_code_page(masked);
+        return;
+    }
+
     ++stats_.code_overwrites;
     if (config_.log_unknown_targets) {
         log("[recomp] guest wrote over translated code at $%08x; dropped %zu "
-            "block(s) on that page, which now fall back to the interpreter",
-            address, it->second.size());
+            "block(s), which now fall back to the interpreter",
+            masked, dropped);
     }
-    blocks_by_page_.erase(it);
+
+    if (survivors.empty()) blocks_by_page_.erase(it);
+    else {
+        it->second = std::move(survivors);
+        memory_.mark_code_page(masked);   // the rest still need watching
+    }
 }
 
 void Runtime::note_unknown_target(GuestAddr address) {

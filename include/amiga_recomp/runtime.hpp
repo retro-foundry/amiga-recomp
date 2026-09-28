@@ -160,6 +160,12 @@ public:
     void watch_translated_code();
     // Called by the memory layer when the guest writes to a code page.
     void invalidate_code_at(u32 address);
+
+    // The guest byte range one translated block covers.
+    struct CodeBlockRange {
+        GuestAddr first;
+        GuestAddr last;
+    };
     [[nodiscard]] std::size_t invalidated_blocks() const {
         return blocks_.invalidated();
     }
@@ -197,7 +203,7 @@ private:
     u32 insn_pc_ = 0;
     // Blocks indexed by the page their code lives on, so a write to that page
     // can drop exactly those blocks rather than scanning the whole table.
-    std::unordered_map<u32, std::vector<GuestAddr>> blocks_by_page_;
+    std::unordered_map<u32, std::vector<CodeBlockRange>> blocks_by_page_;
     // The last block the dispatcher entered, so an unknown target can say
     // where it was reached from. That one fact is most of port bring-up.
     GuestAddr last_block_ = 0;

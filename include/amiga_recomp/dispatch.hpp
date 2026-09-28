@@ -17,6 +17,10 @@ using BlockFn = u32 (*)(M68kState&, Runtime&);
 struct BlockEntry {
     GuestAddr address;
     BlockFn fn;
+    // Bytes of guest code this block was translated from. Lets a write be
+    // matched against the exact range rather than the whole page, so a store
+    // to a variable next to some code does not retire the code.
+    u32 length;
 };
 
 // Open-addressed guest-address -> block lookup. Built once at start-up from
@@ -25,7 +29,7 @@ struct BlockEntry {
 class BlockTable {
 public:
     void build(const BlockEntry* entries, std::size_t count);
-    void add(GuestAddr address, BlockFn fn);
+    void add(GuestAddr address, BlockFn fn, u32 length = 0);
 
     [[nodiscard]] BlockFn find(GuestAddr address) const noexcept {
         if (slots_.empty()) return nullptr;
@@ -47,13 +51,14 @@ public:
     void invalidate(GuestAddr address) noexcept;
     [[nodiscard]] std::size_t invalidated() const noexcept { return invalidated_; }
 
-    // Every address the table holds, for building an index by page.
-    void for_each(void (*fn)(void*, GuestAddr), void* context) const;
+    // Every block the table holds, for building an index by page.
+    void for_each(void (*fn)(void*, GuestAddr, u32), void* context) const;
 
 private:
     struct Slot {
         GuestAddr address = 0;
         BlockFn fn = nullptr;
+        u32 length = 0;
         bool valid = true;
     };
 

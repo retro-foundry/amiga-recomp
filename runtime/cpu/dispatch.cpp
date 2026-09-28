@@ -15,11 +15,11 @@ void BlockTable::grow(std::size_t needed) {
     count_ = 0;
 
     for (const Slot& s : old) {
-        if (s.fn) add(s.address, s.fn);
+        if (s.fn) add(s.address, s.fn, s.length);
     }
 }
 
-void BlockTable::add(GuestAddr address, BlockFn fn) {
+void BlockTable::add(GuestAddr address, BlockFn fn, u32 length) {
     if (slots_.empty() || (count_ + 1) * 2 > slots_.size()) grow(count_ + 1);
     std::size_t i = hash(address) & mask_;
     for (;;) {
@@ -27,11 +27,13 @@ void BlockTable::add(GuestAddr address, BlockFn fn) {
         if (s.fn == nullptr) {
             s.address = address;
             s.fn = fn;
+            s.length = length;
             ++count_;
             return;
         }
         if (s.address == address) {
             s.fn = fn;   // a later definition replaces an earlier one
+            s.length = length;
             return;
         }
         i = (i + 1) & mask_;
@@ -43,7 +45,8 @@ void BlockTable::build(const BlockEntry* entries, std::size_t count) {
     mask_ = 0;
     count_ = 0;
     grow(count ? count : 1);
-    for (std::size_t i = 0; i < count; ++i) add(entries[i].address, entries[i].fn);
+    for (std::size_t i = 0; i < count; ++i)
+        add(entries[i].address, entries[i].fn, entries[i].length);
 }
 
 void BlockTable::invalidate(GuestAddr address) noexcept {
@@ -63,9 +66,9 @@ void BlockTable::invalidate(GuestAddr address) noexcept {
     }
 }
 
-void BlockTable::for_each(void (*fn)(void*, GuestAddr), void* context) const {
+void BlockTable::for_each(void (*fn)(void*, GuestAddr, u32), void* context) const {
     for (const Slot& s : slots_)
-        if (s.fn != nullptr) fn(context, s.address);
+        if (s.fn != nullptr) fn(context, s.address, s.length);
 }
 
 } // namespace arecomp
