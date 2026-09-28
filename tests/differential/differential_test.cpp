@@ -49,7 +49,7 @@ FinalState run_program(Engine engine, u64 max_steps = 100000) {
                       RegionKind::Expansion, "halt-sentinel");
 
     // Load exactly the image the manifest names, at the manifest's address.
-    std::FILE* file = std::fopen(testrom_path("vertical_slice.bin").c_str(), "rb");
+    std::FILE* file = std::fopen(testrom_path(ARECOMP_DIFF_IMAGE).c_str(), "rb");
     if (file) {
         std::vector<u8> data;
         u8 buffer[4096];
@@ -106,9 +106,12 @@ FinalState run_program(Engine engine, u64 max_steps = 100000) {
     state.fallbacks = runtime.stats().interpreter_fallbacks;
     state.blocks = runtime.stats().blocks_executed;
     state.steps = steps;
-    state.work.resize(64);
+    // The whole scratch area, so a wrong result anywhere in the program shows
+    // up as a byte difference rather than passing unnoticed.
+    state.work.resize(ARECOMP_DIFF_WORK_SIZE);
     for (std::size_t i = 0; i < state.work.size(); ++i)
-        state.work[i] = memory.peek8(static_cast<u32>(0x2000 + i));
+        state.work[i] = memory.peek8(
+            static_cast<u32>(ARECOMP_DIFF_WORK_BASE + i));
     return state;
 }
 
@@ -140,7 +143,7 @@ TEST_CASE("generated native code reproduces the interpreter exactly") {
     for (std::size_t i = 0; i < interpreted.work.size(); ++i) {
         if (interpreted.work[i] != native.work[i])
             report_failure(__FILE__, __LINE__,
-                           "memory $" + hex(0x2000 + static_cast<u32>(i)) +
+                           "memory $" + hex(ARECOMP_DIFF_WORK_BASE + static_cast<u32>(i)) +
                                ": interpreter " + hex(interpreted.work[i]) +
                                ", native " + hex(native.work[i]));
     }

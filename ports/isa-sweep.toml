@@ -1,0 +1,43 @@
+# Broad MC68000 instruction coverage for differential testing.
+#
+# Like vertical-slice.toml this is a synthetic program, not a game. It exists
+# so that a wide slice of the instruction set and every addressing mode are
+# compared between the reference interpreter and the generated native code.
+
+[game]
+name = "ISA Sweep"
+id = "isa-sweep"
+machine = "a500-pal"
+
+[input]
+type = "flat"
+path = "../testroms/synthetic/isa_sweep.bin"
+load_address = 0x00001000
+
+[cpu]
+entry = 0x00001000
+sr = 0x2700
+a = [0, 0, 0, 0, 0, 0, 0, 0x0007f000]
+
+[recompiler]
+blocks_per_file = 1000
+
+[harness]
+halt_address = 0x00f00000
+
+[[memory.region]]
+start = 0x00000000
+size = 0x00080000
+kind = "chip"
+permissions = "rwx"
+
+[[code.range]]
+start = 0x00001000
+end = 0x00001400
+
+# The "jsr (a2)" at $1370. Static analysis cannot see where a computed call
+# goes; a trace run reports it and it is recorded here as metadata, which is
+# the intended workflow (AMIGA_RECOMP.md 26.2, 26.3).
+[[indirect_target]]
+site = 0x00001370
+targets = [0x0000138a]

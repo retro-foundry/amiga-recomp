@@ -37,6 +37,8 @@ DISP = re.compile(r'^(.+?)\((?:a([0-7])|sp)\)$', re.I)
 INDEX = re.compile(r'^(.*?)\((?:a([0-7])|sp),\s*([da])([0-7])(?:\.([wl]))?\)$', re.I)
 IMMEDIATE = re.compile(r'^#(.+)$')
 ABS_W = re.compile(r'^(.+)\.w$', re.I)
+PC_DISP = re.compile(r'^(.+?)\(pc\)$', re.I)
+PC_INDEX = re.compile(r'^(.*?)\(pc,\s*([da])([0-7])(?:\.([wl]))?\)$', re.I)
 
 
 class AsmError(Exception):
@@ -143,6 +145,30 @@ class Assembler:
         if m:
             reg = 7 if m.group(1) is None else int(m.group(1))
             return Operand(4, reg)
+
+        # PC-relative modes. The displacement is measured from the extension
+        # word, which this assembler assumes immediately follows the opcode.
+        # That holds for every form it can emit.
+        m = PC_INDEX.match(text)
+        if m:
+            target = self.parse_number(m.group(1), pass_two) if m.group(1).strip() else 0
+            idx_reg = int(m.group(3))
+            idx_is_addr = m.group(2).lower() == 'a'
+            idx_long = (m.group(4) or 'w').lower() == 'l'
+            disp = target - (self.pc + 2) if m.group(1).strip() else 0
+            if not -128 <= disp <= 127:
+                raise AsmError('pc-relative index displacement does not fit in a byte')
+            ext = ((idx_reg << 12) | (0x8000 if idx_is_addr else 0) |
+                   (0x800 if idx_long else 0) | (disp & 0xff))
+            return Operand(7, 3, [ext], kind='pcidx')
+
+        m = PC_DISP.match(text)
+        if m:
+            target = self.parse_number(m.group(1), pass_two)
+            disp = target - (self.pc + 2)
+            if not -32768 <= disp <= 32767:
+                raise AsmError('pc-relative displacement does not fit in a word')
+            return Operand(7, 2, [disp & 0xffff], kind='pcdisp')
 
         m = INDEX.match(text)
         if m:
@@ -314,10 +340,36 @@ class Assembler:
             return
 
         if mnemonic in ('move', 'movea'):
+            # The status register forms look like ordinary moves but are
+            # separate instructions with their own encodings.
+            left = operands[0].strip().lower()
+            right = operands[1].strip().lower()
+            if left == 'sr':
+                dst = self.parse_operand(operands[1], 'w', pass_two)
+                self.emit_word(0x40c0 | (dst.mode << 3) | dst.reg)
+                self.emit_operand_ext(dst)
+                return
+            if right == 'ccr':
+                src = self.parse_operand(operands[0], 'w', pass_two)
+                self.emit_word(0x44c0 | (src.mode << 3) | src.reg)
+                self.emit_operand_ext(src)
+                return
+            if right == 'sr':
+                src = self.parse_operand(operands[0], 'w', pass_two)
+                self.emit_word(0x46c0 | (src.mode << 3) | src.reg)
+                self.emit_operand_ext(src)
+                return
+            if left == 'usp':
+                dst = self.parse_operand(operands[1], 'l', pass_two)
+                self.emit_word(0x4e68 | dst.reg)
+                return
+            if right == 'usp':
+                src = self.parse_operand(operands[0], 'l', pass_two)
+                self.emit_word(0x4e60 | src.reg)
+                return
+
             src = self.parse_operand(operands[0], size, pass_two)
             dst = self.parse_operand(operands[1], size, pass_two)
-            if dst.kind == 'sr':
-                pass
             self.emit_word((MOVE_SIZE_BITS[size] << 12) | (dst.reg << 9) |
                            (dst.mode << 6) | (src.mode << 3) | src.reg)
             self.emit_operand_ext(src)
@@ -441,6 +493,73 @@ class Assembler:
             self.emit_operand_ext(dst)
             return
 
+        # -- register-or-memory pairs (addx/subx/abcd/sbcd/cmpm) -------------
+        pair = {'addx': 0xd100, 'subx': 0x9100, 'abcd': 0xc100, 'sbcd': 0x8100}
+        if mnemonic in pair:
+            src = self.parse_operand(operands[0], size, pass_two)
+            dst = self.parse_operand(operands[1], size, pass_two)
+            if src.mode != dst.mode:
+                raise AsmError(f'{mnemonic} operands must both be registers '
+                               f'or both be -(an)')
+            rm = 1 if src.mode == 4 else 0
+            size_bits = 0 if mnemonic in ('abcd', 'sbcd') else SIZE_BITS[size] << 6
+            self.emit_word(pair[mnemonic] | (dst.reg << 9) | size_bits |
+                           (rm << 3) | src.reg)
+            return
+
+        if mnemonic == 'cmpm':
+            src = self.parse_operand(operands[0], size, pass_two)
+            dst = self.parse_operand(operands[1], size, pass_two)
+            if src.mode != 3 or dst.mode != 3:
+                raise AsmError('cmpm operands must both be (an)+')
+            self.emit_word(0xb108 | (dst.reg << 9) | (SIZE_BITS[size] << 6) | src.reg)
+            return
+
+        if mnemonic == 'nbcd':
+            dst = self.parse_operand(operands[0], 'b', pass_two)
+            self.emit_word(0x4800 | (dst.mode << 3) | dst.reg)
+            self.emit_operand_ext(dst)
+            return
+
+        if mnemonic == 'exg':
+            src = self.parse_operand(operands[0], 'l', pass_two)
+            dst = self.parse_operand(operands[1], 'l', pass_two)
+            if src.is_dreg and dst.is_dreg:
+                opmode = 0x08
+            elif src.is_areg and dst.is_areg:
+                opmode = 0x09
+            elif src.is_dreg and dst.is_areg:
+                opmode = 0x11
+            else:
+                # exg an,dn is encoded as exg dn,an with the registers swapped.
+                self.emit_word(0xc188 | (dst.reg << 9) | src.reg)
+                return
+            self.emit_word(0xc100 | (src.reg << 9) | (opmode << 3) | dst.reg)
+            return
+
+        if mnemonic == 'movep':
+            src = self.parse_operand(operands[0], size, pass_two)
+            dst = self.parse_operand(operands[1], size, pass_two)
+            long_bit = 0x40 if size == 'l' else 0
+            if src.is_dreg:      # register to memory
+                if dst.mode != 5:
+                    raise AsmError('movep memory operand must be d16(an)')
+                self.emit_word(0x0188 | (src.reg << 9) | long_bit | dst.reg)
+                self.emit_word(dst.ext[0])
+            else:
+                if src.mode != 5:
+                    raise AsmError('movep memory operand must be d16(an)')
+                self.emit_word(0x0108 | (dst.reg << 9) | long_bit | src.reg)
+                self.emit_word(src.ext[0])
+            return
+
+        if mnemonic == 'chk':
+            src = self.parse_operand(operands[0], 'w', pass_two)
+            dst = self.parse_operand(operands[1], 'w', pass_two)
+            self.emit_word(0x4180 | (dst.reg << 9) | (src.mode << 3) | src.reg)
+            self.emit_operand_ext(src)
+            return
+
         # -- two-operand ALU ------------------------------------------------
         alu = {'or': 0x8000, 'sub': 0x9000, 'cmp': 0xb000, 'eor': 0xb000,
                'and': 0xc000, 'add': 0xd000}
@@ -481,6 +600,15 @@ class Assembler:
             src = self.parse_operand(operands[0], size, pass_two)
             dst = self.parse_operand(operands[1], size, pass_two)
             base = alu[mnemonic]
+
+            # An immediate source belongs in the ORI/ANDI/SUBI/ADDI/EORI/CMPI
+            # encoding. EOR in particular has no <ea>,Dn direction, so the
+            # immediate would otherwise be dropped and a register read instead.
+            immediate_form = {'or': 'ori', 'and': 'andi', 'sub': 'subi',
+                              'add': 'addi', 'eor': 'eori', 'cmp': 'cmpi'}
+            if src.kind == 'imm' and not dst.is_areg:
+                self.encode(immediate_form[mnemonic], suffix, operands, pass_two)
+                return
 
             # An address-register destination means the ADDA/SUBA/CMPA form.
             if dst.is_areg and mnemonic in ('add', 'sub', 'cmp'):
