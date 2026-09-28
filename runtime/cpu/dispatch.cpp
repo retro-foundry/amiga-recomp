@@ -46,4 +46,26 @@ void BlockTable::build(const BlockEntry* entries, std::size_t count) {
     for (std::size_t i = 0; i < count; ++i) add(entries[i].address, entries[i].fn);
 }
 
+void BlockTable::invalidate(GuestAddr address) noexcept {
+    if (slots_.empty()) return;
+    std::size_t i = hash(address) & mask_;
+    for (;;) {
+        Slot& s = slots_[i];
+        if (s.fn == nullptr) return;
+        if (s.address == address) {
+            if (s.valid) {
+                s.valid = false;
+                ++invalidated_;
+            }
+            return;
+        }
+        i = (i + 1) & mask_;
+    }
+}
+
+void BlockTable::for_each(void (*fn)(void*, GuestAddr), void* context) const {
+    for (const Slot& s : slots_)
+        if (s.fn != nullptr) fn(context, s.address);
+}
+
 } // namespace arecomp

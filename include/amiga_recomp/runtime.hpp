@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "amiga_recomp/cpu_state.hpp"
@@ -71,6 +72,7 @@ struct RuntimeStats {
     u64 exceptions_taken = 0;
     u64 interrupts_taken = 0;
     std::vector<GuestAddr> unknown_targets;
+    u64 code_overwrites = 0;   // pages of translated code the guest rewrote
 };
 
 class Runtime {
@@ -151,6 +153,17 @@ public:
 
     void note_unknown_target(GuestAddr address);
 
+    // Call once after installing the block table. Marks every page holding
+    // translated code, so that a guest write to one drops the blocks it
+    // invalidated and execution falls back to the interpreter, which reads
+    // memory as it now is (AMIGA_RECOMP.md 32).
+    void watch_translated_code();
+    // Called by the memory layer when the guest writes to a code page.
+    void invalidate_code_at(u32 address);
+    [[nodiscard]] std::size_t invalidated_blocks() const {
+        return blocks_.invalidated();
+    }
+
     // The guest address of the instruction currently executing. Translated
     // code records this before an access that can fault, so a bus or address
     // error can report the offending opcode in its exception frame. It is a
@@ -182,6 +195,9 @@ private:
     u8 pending_level_ = 0;
     MasterTick hardware_deadline_ = 0;
     u32 insn_pc_ = 0;
+    // Blocks indexed by the page their code lives on, so a write to that page
+    // can drop exactly those blocks rather than scanning the whole table.
+    std::unordered_map<u32, std::vector<GuestAddr>> blocks_by_page_;
     // The last block the dispatcher entered, so an unknown target can say
     // where it was reached from. That one fact is most of port bring-up.
     GuestAddr last_block_ = 0;

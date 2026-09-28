@@ -33,17 +33,28 @@ public:
         for (;;) {
             const Slot& s = slots_[i];
             if (s.fn == nullptr) return nullptr;
-            if (s.address == address) return s.fn;
+            // An invalidated slot keeps its place so the probe chain stays
+            // intact; it simply stops answering.
+            if (s.address == address) return s.valid ? s.fn : nullptr;
             i = (i + 1) & mask_;
         }
     }
 
     [[nodiscard]] std::size_t size() const noexcept { return count_; }
 
+    // Stop answering for this address. Used when the guest overwrites the code
+    // a block was translated from (AMIGA_RECOMP.md 32).
+    void invalidate(GuestAddr address) noexcept;
+    [[nodiscard]] std::size_t invalidated() const noexcept { return invalidated_; }
+
+    // Every address the table holds, for building an index by page.
+    void for_each(void (*fn)(void*, GuestAddr), void* context) const;
+
 private:
     struct Slot {
         GuestAddr address = 0;
         BlockFn fn = nullptr;
+        bool valid = true;
     };
 
     static std::size_t hash(GuestAddr a) noexcept {
@@ -61,6 +72,7 @@ private:
     std::vector<Slot> slots_;
     std::size_t mask_ = 0;
     std::size_t count_ = 0;
+    std::size_t invalidated_ = 0;
 };
 
 } // namespace arecomp

@@ -32,6 +32,7 @@ void MmioDevice::write32(u32 addr, u32 value) {
 
 GuestMemory::GuestMemory(u32 address_mask) : address_mask_(address_mask) {
     pages_.resize((static_cast<std::size_t>(address_mask_) >> kPageBits) + 1);
+    code_page_.assign(pages_.size(), 0);
 }
 
 void GuestMemory::add_ram(u32 start, u32 size, RegionKind kind, u8 perms,
@@ -167,6 +168,7 @@ void GuestMemory::write8(u32 addr, u8 value) {
     if (p.host) {
         if (!(p.perms & PERM_W)) return;   // ROM write: ignored, as on hardware
         p.host[a & kPageMask] = value;
+        note_code_write(a);
         return;
     }
     if (p.device) {
@@ -183,6 +185,7 @@ void GuestMemory::write16(u32 addr, u16 value) {
     if (p.host) {
         if (!(p.perms & PERM_W)) return;
         put_be16(p.host + (a & kPageMask), value);
+        note_code_write(a);
         return;
     }
     if (p.device) {
@@ -198,6 +201,7 @@ void GuestMemory::write32(u32 addr, u32 value) {
     Page& p = page_of(a);
     if (p.host && (p.perms & PERM_W) && (a & kPageMask) <= kPageSize - 4) {
         put_be32(p.host + (a & kPageMask), value);
+        note_code_write(a);
         return;
     }
     write16(a, static_cast<u16>(value >> 16));

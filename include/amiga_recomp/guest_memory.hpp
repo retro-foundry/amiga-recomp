@@ -116,6 +116,25 @@ public:
     void set_strict_unmapped(bool strict) noexcept { strict_unmapped_ = strict; }
     [[nodiscard]] bool strict_unmapped() const noexcept { return strict_unmapped_; }
 
+    // --- self-modifying code (AMIGA_RECOMP.md 32) ------------------------
+    // Pages holding translated code are marked. A guest write to one means the
+    // translation no longer describes what is there, so the runtime is told
+    // and drops the affected blocks. The flag is cleared once notified, so the
+    // cost is a single byte compare per write and one notification per page.
+    using CodeWriteFn = void (*)(void* context, u32 address);
+    void set_code_write_handler(CodeWriteFn fn, void* context) {
+        code_write_ = fn;
+        code_write_context_ = context;
+    }
+    void mark_code_page(u32 address) {
+        const std::size_t page = (address & address_mask_) >> kPageBits;
+        if (page < code_page_.size()) code_page_[page] = 1;
+    }
+    [[nodiscard]] bool is_code_page(u32 address) const {
+        const std::size_t page = (address & address_mask_) >> kPageBits;
+        return page < code_page_.size() && code_page_[page] != 0;
+    }
+
     struct RegionInfo {
         u32 start = 0;
         u32 size = 0;
@@ -148,6 +167,18 @@ private:
     std::vector<std::unique_ptr<std::vector<u8>>> storage_;
     std::vector<RegionInfo> regions_;
     bool strict_unmapped_ = true;
+
+    std::vector<u8> code_page_;
+    CodeWriteFn code_write_ = nullptr;
+    void* code_write_context_ = nullptr;
+
+    // Called after a write that landed on a page holding translated code.
+    void note_code_write(u32 address) {
+        const std::size_t page = (address & address_mask_) >> kPageBits;
+        if (page >= code_page_.size() || code_page_[page] == 0) return;
+        code_page_[page] = 0;              // report each page once
+        if (code_write_) code_write_(code_write_context_, address);
+    }
 };
 
 // Big-endian helpers for raw buffers, used by loaders and the chipset.

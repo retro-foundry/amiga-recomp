@@ -164,6 +164,45 @@ u32 Runtime::enter_pending_interrupt(M68kState& cpu, u32 next_pc) {
 // Dispatch
 // ---------------------------------------------------------------------------
 
+namespace {
+struct PageIndexBuilder {
+    std::unordered_map<u32, std::vector<GuestAddr>>* index;
+    GuestMemory* memory;
+};
+
+void index_block(void* context, GuestAddr address) {
+    auto* builder = static_cast<PageIndexBuilder*>(context);
+    const u32 page = address >> GuestMemory::kPageBits;
+    (*builder->index)[page].push_back(address);
+    builder->memory->mark_code_page(address);
+}
+
+void on_code_write(void* context, u32 address) {
+    static_cast<Runtime*>(context)->invalidate_code_at(address);
+}
+} // namespace
+
+void Runtime::watch_translated_code() {
+    blocks_by_page_.clear();
+    PageIndexBuilder builder{&blocks_by_page_, &memory_};
+    blocks_.for_each(&index_block, &builder);
+    memory_.set_code_write_handler(&on_code_write, this);
+}
+
+void Runtime::invalidate_code_at(u32 address) {
+    const u32 page = (address & address_mask()) >> GuestMemory::kPageBits;
+    auto it = blocks_by_page_.find(page);
+    if (it == blocks_by_page_.end()) return;
+    for (GuestAddr block : it->second) blocks_.invalidate(block);
+    ++stats_.code_overwrites;
+    if (config_.log_unknown_targets) {
+        log("[recomp] guest wrote over translated code at $%08x; dropped %zu "
+            "block(s) on that page, which now fall back to the interpreter",
+            address, it->second.size());
+    }
+    blocks_by_page_.erase(it);
+}
+
 void Runtime::note_unknown_target(GuestAddr address) {
     for (GuestAddr seen : stats_.unknown_targets)
         if (seen == address) return;
