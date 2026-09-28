@@ -34,3 +34,12 @@ capture/
 .DS_Store
 Thumbs.db
 compile_commands.json
+
+# Amiga NDK / Developer CD content is Commodore/Hyperion copyright and must
+# never be committed. The shim generator reads a user-supplied local copy and
+# writes only into projects/, which is already ignored.
+*.fd
+*.FD
+/ndk/
+/NDK/
+amiga-dev/

@@ -19,6 +19,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 add_library(arecomp_warnings INTERFACE)
+# The tool reads files with the portable C library; the Windows CRT's
+# "consider fopen_s" advice does not apply to a cross-platform build.
+target_compile_definitions(arecomp_warnings INTERFACE _CRT_SECURE_NO_WARNINGS)
 if(MSVC)
   target_compile_options(arecomp_warnings INTERFACE /W4 /permissive- /EHsc)
 else()

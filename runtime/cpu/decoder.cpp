@@ -405,7 +405,14 @@ DecodedInstruction Decoder::decode(u32 pc) const {
 
     // -----------------------------------------------------------------
     case 0x4: {
-        if (op == 0x4afc) { illegal(Mnemonic::IllegalOp); goto done; }
+        if (op == 0x4afc) {
+            // ILLEGAL is a defined instruction whose job is to take vector 4.
+            // It is not an undecodable opcode, and discovery should treat it
+            // as an ordinary block terminator.
+            in.base_cycles = 34;
+            finish(Mnemonic::IllegalOp, INSN_ENDS_BLOCK | INSN_TRAP);
+            goto done;
+        }
 
         if ((op & 0xf1c0) == 0x41c0) {   // LEA
             in.size = Size::Long;

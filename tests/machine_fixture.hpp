@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "amiga_recomp/halt_device.hpp"
 #include "amiga_recomp/interpreter.hpp"
 #include "amiga_recomp/runtime.hpp"
 
@@ -21,18 +22,6 @@ namespace arecomp::test {
 constexpr u32 kHaltAddress = 0x00f00000;
 constexpr u32 kStackTop = 0x0007f000;
 constexpr u32 kLoadAddress = 0x00001000;
-
-class HaltDevice : public MmioDevice {
-public:
-    explicit HaltDevice(M68kState& cpu) : cpu_(cpu) {}
-    u8 read8(u32) override { return 0; }
-    u16 read16(u32) override { return 0; }
-    void write8(u32, u8) override { cpu_.halted = true; }
-    void write16(u32, u16) override { cpu_.halted = true; }
-
-private:
-    M68kState& cpu_;
-};
 
 struct Machine {
     M68kState cpu;

@@ -67,9 +67,9 @@ Tracking AMIGA_RECOMP.md §66. Update this table as work lands.
 
 | # | Milestone | State |
 |---|-----------|-------|
-| 0 | Skeleton: CMake, CLI, manifest, guest memory, logging, tests | not started |
-| 1 | Minimal 68k recomp vertical slice (§69) | not started |
-| 2 | Complete effective-address modes | not started |
+| 0 | Skeleton: CMake, CLI, manifest, guest memory, logging, tests | **done** |
+| 1 | Minimal 68k recomp vertical slice (§69) | **done** |
+| 2 | Complete effective-address modes | **done** (decode + translate; sweep test pending) |
 | 3 | Full MC68000 user instruction set + randomized diff tests | not started |
 | 4 | Exceptions / privilege / interrupts / RTE / STOP | not started |
 | 5 | Amiga memory map, CIA + custom register decode, DMACON/INTENA, beam | not started |

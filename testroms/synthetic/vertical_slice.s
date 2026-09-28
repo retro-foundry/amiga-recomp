@@ -48,9 +48,12 @@ finish:
         move.l  (a1)+,d5        ; d5 = $12345678, a1 = WORKSP+4
         move.w  -(a1),d6        ; d6 = $5678,     a1 = WORKSP+2
 
-* Halt the harness.
+* Halt the harness. The sentinel sets the halt flag, which the dispatcher
+* only tests between blocks, so STOP follows to end the block immediately.
+* Both the interpreter and the generated code then stop at the same
+* instruction, which is what makes the differential comparison meaningful.
         move.w  #1,HALT
-        illegal                 ; never reached; a safety net if it is
+        stop    #$2700
 
 * d3 = d3 * 2, via the stack, so a return address really is popped.
 double_it:

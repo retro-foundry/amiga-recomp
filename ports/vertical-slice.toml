@@ -1,0 +1,39 @@
+# The demonstration port from AMIGA_RECOMP.md 69.
+#
+# A synthetic 68000 program, not a game: it exists so the whole pipeline
+# (decode, discover, translate, compile, run) can be proven end to end and
+# differentially tested against the reference interpreter.
+
+[game]
+name = "Vertical Slice"
+id = "vertical-slice"
+machine = "a500-pal"
+
+[input]
+type = "flat"
+path = "../testroms/synthetic/vertical_slice.bin"
+load_address = 0x00001000
+
+[cpu]
+entry = 0x00001000
+sr = 0x2700
+a = [0, 0, 0, 0, 0, 0, 0, 0x0007f000]
+
+[recompiler]
+emit_instruction_comments = true
+emit_cycle_accounting = true
+# One translation unit keeps the test wiring simple and deterministic.
+blocks_per_file = 1000
+
+[harness]
+halt_address = 0x00f00000
+
+[[memory.region]]
+start = 0x00000000
+size = 0x00080000
+kind = "chip"
+permissions = "rwx"
+
+[[code.range]]
+start = 0x00001000
+end = 0x00001060
